@@ -1,5 +1,4 @@
 import torch
-from generate import generate_data
 #from modules.dense import DenseEncoder, LinearEncoder
 from einops import rearrange, pack, unpack, repeat, reduce
 from torch.func import functional_call, vmap, jacrev

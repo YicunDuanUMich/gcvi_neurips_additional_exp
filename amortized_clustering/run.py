@@ -26,7 +26,7 @@ import hydra
 from hydra import compose, initialize
 from omegaconf import DictConfig
 import random
-from setup import setup
+from .setup import setup
 from losses import batch_favi_loss,  batch_elbo_loss
 
 def loss_choice(loss_name, **kwargs):
