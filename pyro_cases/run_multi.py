@@ -2,6 +2,7 @@ import torch
 import random
 import multiprocessing
 import gc
+import click
 
 from pathlib import Path
 from termcolor import colored
@@ -12,9 +13,10 @@ def my_worker(func, kwargs, device):
     torch_device = torch.device(device)
     return func(**kwargs, device=torch_device)
 
-if __name__ == "__main__":
-    multiprocessing.set_start_method("forkserver")
-
+@click.command()
+@click.option("--save-path", type=str, help="path to output file")
+@click.option("--cuda-idx", type=str, help="cuda devices")
+def main(save_path, cuda_idx):
     model_num = 100
     task_names = ["gaussian_linear"]
     lr_schedulers = ["plain", 
@@ -22,8 +24,11 @@ if __name__ == "__main__":
                      "cosine_annealing", "cyclic", "one_cycle", 
                      "cosine_annealing_warm_restart"]
     network_widths = [512, 1024, 2048]
-    save_path = Path("/data/scratch/pduan/new_gcvi_output")
-    cuda_devices = [f"cuda:{i}" for i in [2, 3, 4, 7]]
+    save_path = Path(save_path)
+    if cuda_idx == "all":
+        cuda_devices = [f"cuda:{i}" for i in range(torch.cuda.device_count())]
+    else:
+        cuda_devices = [f"cuda:{i}" for i in cuda_idx.split(",")]
 
     print_green = lambda x: print(colored(x, "green"))
 
@@ -85,3 +90,8 @@ if __name__ == "__main__":
     for pool in pools.values():
         pool.close()
         pool.join()
+
+
+if __name__ == "__main__":
+    multiprocessing.set_start_method("forkserver")
+    main()

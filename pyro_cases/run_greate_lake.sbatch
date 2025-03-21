@@ -23,4 +23,4 @@ echo "running on: $SLURM_JOB_NODELIST"
 cd ~/gcvi_neurips
 source .venv/bin/activate
 
-python pyro_cases/run_multi.py
+python pyro_cases/run_multi.py --save-path /scratch/regier_root/regier0/pduan/gcvi_output --cuda-idx all
