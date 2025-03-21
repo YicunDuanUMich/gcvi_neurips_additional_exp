@@ -1,13 +1,8 @@
 import torch
-from torch import distributions as D
-import torch.nn as nn
 import numpy as np
-import matplotlib.pyplot as plt
-import pandas as pd
 from generate import generate_data
 from modules.invariant_encoders import SetTransformer
 from modules.custom_lr_scheduler import CustomOptim2
-import hydra
 
 def setup(cfg):
     # CONFIGURE

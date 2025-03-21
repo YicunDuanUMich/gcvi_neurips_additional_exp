@@ -5,29 +5,14 @@ os.environ["MKL_NUM_THREADS"] = "4"
 os.environ["VECLIB_MAXIMUM_THREADS"] = "4"  
 os.environ["NUMEXPR_NUM_THREADS"] = "4"
 import torch
-import torch.distributions as D
-import math
-import time
-import torch.nn as nn
-import matplotlib.pyplot as plt
-import sys
-sys.path.append("../")
 import numpy as np 
 # -- plotting -- 
-import matplotlib as mpl
-import matplotlib.pyplot as plt
-import time
 from os.path import exists
-import torch.distributions as D
-import torch
-import numpy as np
-import matplotlib.pyplot as plt
 import hydra
-from hydra import compose, initialize
 from omegaconf import DictConfig
 import random
-from .setup import setup
-from losses import batch_favi_loss,  batch_elbo_loss
+from amortized_clustering.setup import setup
+from amortized_clustering.losses import batch_favi_loss,  batch_elbo_loss
 
 def loss_choice(loss_name, **kwargs):
     if loss_name == 'favi':

@@ -5,29 +5,15 @@ os.environ["MKL_NUM_THREADS"] = "4"
 os.environ["VECLIB_MAXIMUM_THREADS"] = "4"  
 os.environ["NUMEXPR_NUM_THREADS"] = "4"
 import torch
-import torch.distributions as D
-import math
-import torch.nn as nn
 import matplotlib.pyplot as plt
-import sys
-sys.path.append("../")
 import numpy as np 
 # -- plotting -- 
 import matplotlib
-import matplotlib.pyplot as plt
-import time
-from os.path import exists
-import torch.distributions as D
-import torch
-import numpy as np
-import matplotlib.pyplot as plt
 import hydra
 import pandas as pd
-from hydra import compose, initialize
 from omegaconf import DictConfig
 import random
-from setup import setup
-import scienceplots
+from amortized_clustering.setup import setup
 import seaborn as sns
 plt.style.use('science')
 matplotlib.rcParams.update({'font.size': 30}) 

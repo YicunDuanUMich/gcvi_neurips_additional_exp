@@ -1,8 +1,7 @@
 import torch
 import torch.distributions as D
-import torch.nn as nn
 import math
-from losses import get_imp_weights_amortized_angle_only
+from rotated_mnist_toy.losses import get_imp_weights_amortized_angle_only
 
 def fKL(zs, xs, kwargs):
     angle_encoder = kwargs['angle_encoder']

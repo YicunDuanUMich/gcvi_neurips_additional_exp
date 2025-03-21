@@ -8,15 +8,15 @@ import time
 
 from pathlib import Path
 
-from modules.dense import (DenseEncoder1LayerGaussian, 
-                           DenseGaussianLinearELBO,
-                           DenseGaussianLinearUniformELBO,
-                           DenseSLCPELBO,
-                           DenseSLCPwDistractorELBO,
-                           DenseBernoulliGLMELBO,
-                           DenseBernoulliGLMRawELBO,
-                           DenseGaussianMixtureELBO,
-                           DenseTwoMoonsELBO)
+from sbibm_cases.model import (DenseEncoder1LayerGaussian, 
+                                DenseGaussianLinearELBO,
+                                DenseGaussianLinearUniformELBO,
+                                DenseSLCPELBO,
+                                DenseSLCPwDistractorELBO,
+                                DenseBernoulliGLMELBO,
+                                DenseBernoulliGLMRawELBO,
+                                DenseGaussianMixtureELBO,
+                                DenseTwoMoonsELBO)
 from modules.custom_lr_scheduler import CustomOptim
 
 
@@ -80,8 +80,9 @@ def train_and_test(task_name, seed, device, use_elbo):
                           hidden_dim=1024).to(device=device)
     
     lr = 1e-3
-    optimizer = torch.optim.Adam(encoder.parameters(), lr=lr, amsgrad=True)
-    scheduler = CustomOptim(optimizer, start_lr=lr)
+    optimizer = CustomOptim(torch.optim.Adam(encoder.parameters(), 
+                                             lr=lr, amsgrad=True), 
+                            start_lr=lr)
 
     start_time = time.time()
 
@@ -94,7 +95,7 @@ def train_and_test(task_name, seed, device, use_elbo):
         xs = simulator(thetas)
         thetas, xs = thetas.to(device=device), xs.to(device=device)
         
-        scheduler.zero_grad()
+        optimizer.zero_grad()
         # optimizer.zero_grad()
         if not use_elbo:
             loss = encoder.batch_favi_loss(thetas, xs)
@@ -103,7 +104,7 @@ def train_and_test(task_name, seed, device, use_elbo):
         loss = loss.mean()
         loss.backward()
         # optimizer.step()
-        scheduler.step_and_update_lr()
+        optimizer.step_and_update_lr()
 
         training_loss.append(loss.item())
 

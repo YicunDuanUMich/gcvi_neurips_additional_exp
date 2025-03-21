@@ -4,15 +4,13 @@ os.environ["OPENBLAS_NUM_THREADS"] = "4"
 os.environ["MKL_NUM_THREADS"] = "4"  
 os.environ["VECLIB_MAXIMUM_THREADS"] = "4"  
 os.environ["NUMEXPR_NUM_THREADS"] = "4"
-import sys
-sys.path.append('../')
+
 import torch.distributions as D
 import torch
 import math
 
-from hydra import compose, initialize
 from omegaconf import DictConfig
-from modules.mnist_modules import MNISTGenerator, InferenceModel, MNISTLatentEncoder, MNISTAngleEncoder
+from modules.mnist_modules import MNISTGenerator, MNISTAngleEncoder
 from modules.custom_lr_scheduler import CustomOptim2
 
 def setup(cfg : DictConfig):

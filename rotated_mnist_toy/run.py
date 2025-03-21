@@ -4,24 +4,17 @@ os.environ["OPENBLAS_NUM_THREADS"] = "4"
 os.environ["MKL_NUM_THREADS"] = "4"  
 os.environ["VECLIB_MAXIMUM_THREADS"] = "4"  
 os.environ["NUMEXPR_NUM_THREADS"] = "4"
-import sys
-sys.path.append('../')
-import torch.distributions as D
+
 import torch
-import numpy as np
 import hydra
-import sys
-sys.path.append("../")
 import numpy as np 
 # -- plotting -- 
 from os.path import exists
-from hydra import compose, initialize
 from omegaconf import DictConfig
 import random
-import torch.nn as nn
-from losses import favi_loss, elbo, log_evidence
-from setup import setup
-from divs import fKL, nll
+from rotated_mnist_toy.losses import favi_loss, elbo, log_evidence
+from rotated_mnist_toy.setup import setup
+from rotated_mnist_toy.divs import fKL, nll
 
 def loss_choice(loss_name, z, true_x, **kwargs):
     if loss_name == 'favi':

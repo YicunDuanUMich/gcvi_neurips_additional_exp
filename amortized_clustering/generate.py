@@ -1,7 +1,6 @@
 import torch
 from torch import distributions as D
-from utils import processor, processor_batch
-from einops import rearrange, reduce, repeat
+from einops import rearrange
 
 def generate_data(true_centers, n_sets, n_obs, sigma, tau, proportions, true_shift, prior=True):
     '''Given a tensor of d true centers,

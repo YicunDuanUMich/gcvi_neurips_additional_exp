@@ -1,9 +1,8 @@
 import torch
-from generate import generate_data_favi
+from amortized_clustering.generate import generate_data_favi
 import torch.distributions as D
 import math
 from einops import rearrange, reduce, repeat
-from utils import processor, processor_batch
 
 
 def gaussian_log_density_natural(eta1, eta2, x):

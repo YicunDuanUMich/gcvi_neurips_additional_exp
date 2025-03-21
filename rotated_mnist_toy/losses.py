@@ -1,7 +1,7 @@
 import torch
 import torch.distributions as D
 import torch.nn as nn
-from einops import rearrange,reduce,repeat
+from einops import rearrange, reduce, repeat
 import torch.nn.functional as F
 
 #------HELPER FUNCTIONS------#

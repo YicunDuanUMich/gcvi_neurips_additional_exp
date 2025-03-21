@@ -3,12 +3,6 @@ import math
 from torch import distributions as D
 import torch.nn as nn
 import torch.nn.functional as F
-from einops import rearrange, reduce, repeat
-import torch
-from torch import distributions as D
-import torch.nn as nn
-import torch.nn.functional as F
-import math
 
 class MNISTGenerator(nn.Module):
     def __init__(self, cfg, init, device, latent_size=64, hidden_size=256, image_size=784, weight_path=None):
