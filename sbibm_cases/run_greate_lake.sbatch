@@ -21,8 +21,7 @@ module list
 echo "running on: $SLURM_JOB_NODELIST"
 
 cd ~/gcvi_neurips
-
-source .vene/bin/activate
+source .venv/bin/activate
 
 export OMP_NUM_THREADS=4 && \
 export OPENBLAS_NUM_THREADS=4 && \
