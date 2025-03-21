@@ -90,6 +90,8 @@ def main(save_path, cuda_idx):
     for pool in pools.values():
         pool.close()
         pool.join()
+    
+    print_green("done")
 
 
 if __name__ == "__main__":

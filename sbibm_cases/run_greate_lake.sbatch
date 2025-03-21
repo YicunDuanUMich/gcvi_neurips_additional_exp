@@ -20,7 +20,7 @@ module list
 
 echo "running on: $SLURM_JOB_NODELIST"
 
-cd ~/gcvi_neurips
+cd ~/gcvi_neurips_additional_exp
 source .venv/bin/activate
 
 export OMP_NUM_THREADS=4 && \
