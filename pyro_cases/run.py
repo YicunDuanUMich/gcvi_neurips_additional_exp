@@ -30,7 +30,42 @@ from pyro_cases.model import (BaseVAE,
                               ARM_congress,
                               ARM_earnings1,
                               ARM_earnings2,
-                              ARM_earnings_latin_square)
+                              ARM_earnings_latin_square,
+                              ARM_earnings_latin_square_chr,
+                              ARM_earnings_vary_si,
+                              ARM_earnings_vary_si_chr,
+                              ARM_election88_ch14,
+                              ARM_election88_ch19,
+                              ARM_electric,
+                              ARM_electric_1a,
+                              ARM_electric_1a_chr,
+                              ARM_electric_1b)
+
+vae_dict = {
+    "gaussian_linear": GaussianLinearVAE,
+    "gaussian_linear_uniform": GaussianLinearUniformVAE,
+    "slcp": SLCPVAE,
+    "slcp_distractors": SLCPwDistractorVAE,
+    "bernoulli_glm_raw": BeroulliGLMRAWVAE,
+    "bernoulli_glm": BernoulliGLMVAE,
+    "gaussian_mixture": GaussianMixtureVAE,
+    "two_moons": TwoMoonsVAE,
+    "arm_anova_randon_nopred": ARM_anova_randon_nopred,
+    "arm_anova_randon_nopred_chr": ARM_anova_randon_nopred_chr,
+    "arm_congress": ARM_congress,
+    "arm_earnings1": ARM_earnings1,
+    "arm_earnings2": ARM_earnings2,
+    "arm_earnings_latin_square": ARM_earnings_latin_square,
+    "arm_earnings_latin_square_chr": ARM_earnings_latin_square_chr,
+    "arm_earnings_vary_si": ARM_earnings_vary_si,
+    "arm_earnings_vary_si_chr": ARM_earnings_vary_si_chr,
+    "arm_election88_ch14": ARM_election88_ch14,
+    "arm_election88_ch19": ARM_election88_ch19,
+    "arm_electric": ARM_electric,
+    "arm_electric_1a": ARM_electric_1a,
+    "arm_electric_1a_chr": ARM_electric_1a_chr,
+    "arm_electric_1b": ARM_electric_1b,
+}
 
 class NullScheduler:
     def step(self):
@@ -65,42 +100,16 @@ def train_and_test(task_name,
                    batch_size, 
                    network_width,
                    steps,
-                   show_progress):
+                   show_progress,
+                   silent=False):
     torch.manual_seed(seed)
     random.seed(seed)
     np.random.seed(seed)
 
-    match task_name:
-        case "gaussian_linear":
-            vae = GaussianLinearVAE
-        case "gaussian_linear_uniform":
-            vae = GaussianLinearUniformVAE
-        case "slcp":
-            vae = SLCPVAE
-        case "slcp_distractors":
-            vae = SLCPwDistractorVAE
-        case "bernoulli_glm_raw":
-            vae = BeroulliGLMRAWVAE
-        case "bernoulli_glm":
-            vae = BernoulliGLMVAE
-        case "gaussian_mixture":
-            vae = GaussianMixtureVAE
-        case "two_moons":
-            vae = TwoMoonsVAE
-        case "arm_anova_randon_nopred":
-            vae = ARM_anova_randon_nopred
-        case "arm_anova_randon_nopred_chr":
-            vae = ARM_anova_randon_nopred_chr
-        case "arm_congress":
-            vae = ARM_congress
-        case "arm_earnings1":
-            vae = ARM_earnings1
-        case "arm_earnings2":
-            vae = ARM_earnings2
-        case "arm_earnings_latin_square":
-            vae = ARM_earnings_latin_square
-        case _:
-            raise NotImplementedError()
+    if task_name in vae_dict:
+        vae = vae_dict[task_name]
+    else:
+        raise NotImplementedError()
     vae = vae(hidden_dim=network_width).to(device=device)
     pyro.clear_param_store()
     elbo_optimizer = ClippedAdam({"lr": lr, 
@@ -148,6 +157,7 @@ def train_and_test(task_name,
         case _:
             raise NotImplementedError()
 
+    task_start_time = time.ctime()
     start_time = time.time()
 
     vae = vae.train()
@@ -180,8 +190,10 @@ def train_and_test(task_name,
     favi_test_dict_list = [compare_ref_and_est(vae, favi_encoder, i + 10_000) 
                            for i in range(10)]
     
+    task_end_time = time.ctime()
     end_time = time.time()
-    print(f"[{seed} completes] cost time: {end_time - start_time:.1f} seconds")
+    if not silent:
+        print(f"[{seed} completes] task start time: {task_start_time}; task end time: {task_end_time}; cost time: {end_time - start_time:.1f} seconds")
 
     return {
         "seed": seed,

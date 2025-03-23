@@ -3,15 +3,39 @@ import random
 import multiprocessing
 import gc
 import click
+import time
 
 from pathlib import Path
 from termcolor import colored
 
-from pyro_cases.run import train_and_test
+from pyro_cases.run import train_and_test, vae_dict
 
-def my_worker(func, kwargs, device):
-    torch_device = torch.device(device)
-    return func(**kwargs, device=torch_device)
+
+def my_worker(kwargs):
+    return train_and_test(**kwargs)
+
+def process_task(tag, task_param_dict_list, device_count, max_processes_per_gpu):
+    results = []
+    total_processes = device_count * max_processes_per_gpu
+    total_sub_tasks = len(task_param_dict_list)
+    boundaries = list(range(0, total_sub_tasks, total_processes)) + [total_sub_tasks]
+    slices = list(zip(boundaries[:-1], boundaries[1:]))
+    print_blue = lambda x: print(colored(x, "blue"))
+    for ls, rs in slices:
+        # python's multiprocessing has a bug if we set the maxtasksperchild
+        # details in https://github.com/python/cpython/issues/93580
+        # the map_async and other async methods are also buggy
+        # don't use them
+        start_time = time.time()
+        start_date = time.ctime()
+        print_blue(f"tag {tag} [{rs}/{total_sub_tasks}]: start at {start_date}")
+        with multiprocessing.Pool(processes=total_processes) as p:
+            results.extend(p.map(my_worker, task_param_dict_list[ls:rs]))
+        end_time = time.time()
+        end_date = time.ctime()
+        print_blue(f"tag {tag} [{rs}/{total_sub_tasks}]: end at {end_date}")
+        print_blue(f"tag {tag} [{rs}/{total_sub_tasks}]: take {end_time - start_time:.1f} seconds")
+    return results
 
 @click.command()
 @click.option("--save-path", type=str, help="path to output file")
@@ -29,9 +53,9 @@ def main(save_path, cuda_idx):
         cuda_devices = [f"cuda:{i}" for i in range(torch.cuda.device_count())]
     else:
         cuda_devices = [f"cuda:{i}" for i in cuda_idx.split(",")]
+    max_processes_per_gpu = 4
 
     print_green = lambda x: print(colored(x, "green"))
-
     print_green("+" * 100)
     print_green("Config:")
     print_green(f"\t tasks_names: {task_names}")
@@ -51,12 +75,14 @@ def main(save_path, cuda_idx):
 
     tasks = {t: [] for t, _ in task_tags}
     for t, (tn, lr_s, network_width) in task_tags:
+        assert tn in vae_dict
         for model_i in range(model_num):
+            device = torch.device(cuda_devices[model_i % len(cuda_devices)])
             tasks[t].append(
-                (train_and_test, 
                 {
                     "task_name": tn,
                     "seed": random.Random(1234 + model_i).randint(10_000, 100_000 - 1),
+                    "device": device,
                     "lr": 1e-3,
                     "lr_schedule": lr_s,
                     "num_particles": 1,
@@ -65,35 +91,21 @@ def main(save_path, cuda_idx):
                     "network_width": network_width,
                     "steps": 20_000,
                     "show_progress": False,
-                })
+                    "silent": True,
+                }
             )
     
-    print_green("create process pools")
-    pools = {cuda_d: multiprocessing.Pool(processes=4) for cuda_d in cuda_devices}
-    print_green("submit tasks")
-    processes = {t: [] for t, _ in task_tags}
-    for tk, tv_list in tasks.items():
-        for i, (func, param_dict) in enumerate(tv_list):
-            device = cuda_devices[i % len(cuda_devices)]
-            pool = pools[device]
-            processes[tk].append(pool.apply_async(my_worker, 
-                                                  args=(func, param_dict, device)))
-    print_green("have submitted all the tasks")
-
-    for t, _ in task_tags:
-        outputs = [p.get() for p in processes[t]]
-        print_green(f"tag {t} completes")
-        torch.save(outputs, save_path / f"pyro_{t}_mn_{model_num}.pt")
-        del outputs
+    for t, task_param_dict_list in tasks.items():
+        print_green(f"processing tag {t}")
+        t_result = process_task(t, task_param_dict_list, len(cuda_devices), max_processes_per_gpu)
+        torch.save(t_result, save_path / f"pyro_{t}_mn_{model_num}.pt")
+        del t_result
         gc.collect()
-
-    for pool in pools.values():
-        pool.close()
-        pool.join()
+        print_green(f"tag {t} completes")
     
     print_green("done")
 
 
 if __name__ == "__main__":
-    multiprocessing.set_start_method("forkserver")
+    multiprocessing.set_start_method("spawn")
     main()

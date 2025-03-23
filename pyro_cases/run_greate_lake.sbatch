@@ -11,6 +11,7 @@
 #SBATCH --gpus-per-node=a40:8
 #SBATCH --cpus-per-gpu=4
 #SBATCH --mem-per-gpu=40GB
+#SBATCH --gpu_cmode=shared
 
 ## wall time hours:minutes:seconds
 #SBATCH --time=24:00:00

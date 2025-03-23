@@ -89,8 +89,9 @@ class BaseVAE(nn.Module):
         pyro.module("encoder", self.encoder)
         x = self.extract_x(sample_dict)
         assert batch_size == x.shape[0]
-        with pyro.plate("plate_batch", batch_size):
-            theta_loc, theta_scale = self.encoder(x)
+
+        theta_loc, theta_scale = self.encoder(x)
+        with pyro.plate("plate_batch", batch_size):    
             pyro.sample("latent", dist.Normal(theta_loc, theta_scale).to_event(1))
 
     def get_observation(self, obs_seed):
@@ -386,9 +387,10 @@ class ARM_anova_randon_nopred(BaseVAE):
 
         plate_batch = pyro.plate("plate_batch", batch_size, dim=-1)
         plate_j = pyro.plate("plate_j", sample_dict["J"], dim=-2)
-        with plate_batch:
-            x = self.extract_x(sample_dict)
-            theta_loc, theta_scale = self.encoder(x)
+
+        x = self.extract_x(sample_dict)
+        theta_loc, theta_scale = self.encoder(x)
+        with plate_batch:    
             pyro.sample("mu_a", dist.Normal(theta_loc[:, 0], theta_scale[:, 0]))
             with plate_j:
                 pyro.sample("a", dist.Normal(rearrange(theta_loc[:, 1:], "b j -> j b"), 
@@ -446,9 +448,10 @@ class ARM_anova_randon_nopred_chr(BaseVAE):
 
         plate_batch = pyro.plate("plate_batch", batch_size, dim=-1)
         plate_j = pyro.plate("plate_j", sample_dict["J"], dim=-2)
-        with plate_batch:
-            x = self.extract_x(sample_dict)
-            theta_loc, theta_scale = self.encoder(x)
+
+        x = self.extract_x(sample_dict)
+        theta_loc, theta_scale = self.encoder(x)
+        with plate_batch:    
             pyro.sample("mu_a", dist.Normal(theta_loc[:, 0], theta_scale[:, 0]))
             with plate_j:
                 pyro.sample("eta", dist.Normal(rearrange(theta_loc[:, 1:], "b j -> j b"), 
@@ -505,9 +508,10 @@ class ARM_congress(BaseVAE):
         pyro.module("encoder", self.encoder)
 
         plate_batch = pyro.plate("plate_batch", batch_size, dim=-1)
-        with plate_batch:
-            x = self.extract_x(sample_dict)
-            theta_loc, theta_scale = self.encoder(x)
+
+        x = self.extract_x(sample_dict)
+        theta_loc, theta_scale = self.encoder(x)
+        with plate_batch:    
             pyro.sample("beta", dist.Normal(theta_loc, theta_scale).to_event(1))
 
     def model(self, batch_size, sample_dict):
@@ -557,9 +561,10 @@ class ARM_earnings1(BaseVAE):
         pyro.module("encoder", self.encoder)
 
         plate_batch = pyro.plate("plate_batch", batch_size, dim=-1)
-        with plate_batch:
-            x = self.extract_x(sample_dict)
-            theta_loc, theta_scale = self.encoder(x)
+
+        x = self.extract_x(sample_dict)
+        theta_loc, theta_scale = self.encoder(x)
+        with plate_batch:    
             pyro.sample("beta", dist.Normal(theta_loc, theta_scale).to_event(1))
 
     def model(self, batch_size, sample_dict):
@@ -608,9 +613,9 @@ class ARM_earnings2(BaseVAE):
         pyro.module("encoder", self.encoder)
 
         plate_batch = pyro.plate("plate_batch", batch_size, dim=-1)
-        with plate_batch:
-            x = self.extract_x(sample_dict)
-            theta_loc, theta_scale = self.encoder(x)
+        x = self.extract_x(sample_dict)
+        theta_loc, theta_scale = self.encoder(x)
+        with plate_batch:    
             pyro.sample("beta", dist.Normal(theta_loc, theta_scale).to_event(1))
 
     def model(self, batch_size, sample_dict):
@@ -811,4 +816,908 @@ class ARM_earnings_latin_square(BaseVAE):
                                                                   n=sample_dict["N"])),
                                                obs=sample_dict["y"] if "y" in sample_dict else None)
         return sample_dict
+
+
+class ARM_earnings_latin_square_chr(BaseVAE):
+    def __init__(self, hidden_dim):
+        super().__init__(607, 76, hidden_dim)
+        self.x_format = [("x", 300), ("y", 300), 
+                        ("sigma_a1", 1), ("sigma_a2", 1), 
+                        ("sigma_b1", 1), ("sigma_b2", 1), 
+                        ("sigma_c", 1), ("sigma_d", 1), 
+                        ("sigma_y", 1)]
+        self.theta_format = [("mu_a1", ()), ("mu_a2", ()), 
+                            ("mu_b1", ()), ("mu_b2", ()), 
+                            ("mu_c", ()), ("mu_d", ()),
+                            ("eta_a1", (5, 1)), ("eta_a2", (5, 1)), 
+                            ("eta_b1", (5, )), ("eta_b2", (5, )), 
+                            ("eta_c", (5, 5)), ("eta_d", (5, 5))]
+        
+    def _extract_x_func(self, sample_dict):
+        x_list = []
+        for x_name, x_dim in self.x_format:
+            x = rearrange(sample_dict[x_name], "... b -> b (...)")
+            assert x.shape[-1] == x_dim
+            x_list.append(x)
+        return torch.cat(x_list, dim=-1)
     
+    def _extract_theta_func(self, sample_dict):
+        theta_list = []
+        for theta_name, theta_dim in self.theta_format:
+            theta = sample_dict[theta_name]
+            assert theta.shape[:-1] == theta_dim
+            theta_list.append(rearrange(theta, "... b -> b (...)"))
+        return torch.cat(theta_list, dim=-1)
+    
+    def guide(self, batch_size, sample_dict):
+        pyro.module("encoder", self.encoder)
+
+        plate_batch = pyro.plate("plate_batch", batch_size, dim=-1)
+        plate_a = pyro.plate("plate_a", sample_dict["n_eth"], dim=-3)
+        plate_b = pyro.plate("plate_b", sample_dict["n_age"], dim=-2)
+
+        x = self.extract_x(sample_dict)
+        theta_loc, theta_scale = self.encoder(x)
+
+        with plate_batch:
+            pyro.sample("mu_a1", dist.Normal(theta_loc[:, 0], theta_scale[:, 0]))
+            pyro.sample("mu_a2", dist.Normal(theta_loc[:, 1], theta_scale[:, 1]))
+            pyro.sample("mu_b1", dist.Normal(theta_loc[:, 2], theta_scale[:, 2]))
+            pyro.sample("mu_b2", dist.Normal(theta_loc[:, 3], theta_scale[:, 3]))
+            pyro.sample("mu_c", dist.Normal(theta_loc[:, 4], theta_scale[:, 4]))
+            pyro.sample("mu_d", dist.Normal(theta_loc[:, 5], theta_scale[:, 5]))
+            with plate_a:
+                pyro.sample("eta_a1", dist.Normal(
+                    rearrange(theta_loc[:, 6:11], "b n_eth -> n_eth 1 b"),
+                    rearrange(theta_scale[:, 6:11], "b n_eth -> n_eth 1 b")
+                ))
+                pyro.sample("eta_a2", dist.Normal(
+                    rearrange(theta_loc[:, 11:16], "b n_eth -> n_eth 1 b"),
+                    rearrange(theta_scale[:, 11:16], "b n_eth -> n_eth 1 b")
+                ))
+            with plate_b:
+                pyro.sample("eta_b1", dist.Normal(
+                    rearrange(theta_loc[:, 16:21], "b n_age -> n_age b"),
+                    rearrange(theta_scale[:, 16:21], "b n_age -> n_age b")
+                ))
+                pyro.sample("eta_b2", dist.Normal(
+                    rearrange(theta_loc[:, 21:26], "b n_age -> n_age b"),
+                    rearrange(theta_scale[:, 21:26], "b n_age -> n_age b")
+                ))
+            with plate_a, plate_b:
+                pyro.sample("eta_c", dist.Normal(
+                    rearrange(theta_loc[:, 26:51], "b (n_eth n_age) -> n_eth n_age b", n_eth=5, n_age=5),
+                    rearrange(theta_scale[:, 26:51], "b (n_eth n_age) -> n_eth n_age b", n_eth=5, n_age=5)
+                ))
+                pyro.sample("eta_d", dist.Normal(
+                    rearrange(theta_loc[:, 51:], "b (n_eth n_age) -> n_eth n_age b", n_eth=5, n_age=5),
+                    rearrange(theta_scale[:, 51:], "b (n_eth n_age) -> n_eth n_age b", n_eth=5, n_age=5)
+                ))
+
+    @classmethod
+    def _add_sample(cls, 
+                    sample_dict, 
+                    name: str, 
+                    dist):
+        sample_dict[name] = pyro.sample(name, dist)
+
+    def model(self, batch_size, sample_dict):
+        if sample_dict is None:
+            sample_dict = {}
+            sample_dict["N"] = 300
+            sample_dict["n_age"] = 5
+            sample_dict["n_eth"] = 5
+            sample_dict["sigma_a1"] = torch.ones(batch_size, device=self.device) * 5
+            sample_dict["sigma_a2"] = torch.ones(batch_size, device=self.device) * 1
+            sample_dict["sigma_b1"] = torch.ones(batch_size, device=self.device) * 5
+            sample_dict["sigma_b2"] = torch.ones(batch_size, device=self.device) * 0.1
+            sample_dict["sigma_c"] = torch.ones(batch_size, device=self.device) * 0.1
+            sample_dict["sigma_d"] = torch.ones(batch_size, device=self.device) * 0.01
+            sample_dict["sigma_y"] = torch.ones(batch_size, device=self.device) * 0.1
+            assert sample_dict["N"] % (sample_dict["n_eth"] * sample_dict["n_age"]) == 0
+            eth_age_pair = torch.stack(torch.meshgrid(torch.arange(sample_dict["n_eth"], device=self.device), 
+                                                      torch.arange(sample_dict["n_age"], device=self.device),
+                                                      indexing="ij"), dim=-1)
+            sample_dict["eth"] = repeat(eth_age_pair[..., 0],
+                                        "k1 k2 -> (r k1 k2)", 
+                                        r=sample_dict["N"] // (sample_dict["n_eth"] * sample_dict["n_age"]))
+            sample_dict["age"] = repeat(eth_age_pair[..., 1],
+                                        "k1 k2 -> (r k1 k2)", 
+                                        r=sample_dict["N"] // (sample_dict["n_eth"] * sample_dict["n_age"]))
+            sample_dict["x"] = torch.randn(sample_dict["N"], batch_size, device=self.device) * 30 + 200
+        else:
+            sample_dict = copy.copy(sample_dict)
+        
+        plate_batch = pyro.plate("plate_batch", batch_size, dim=-1)
+        plate_a = pyro.plate("plate_a", sample_dict["n_eth"], dim=-3)
+        plate_b = pyro.plate("plate_b", sample_dict["n_age"], dim=-2)
+        plate_n = pyro.plate("plate_n", sample_dict["N"], dim=-2)
+           
+        with plate_batch:
+            for param_name in ["mu_a1", "mu_a2", "mu_b1", "mu_b2", "mu_c", "mu_d"]:
+                self._add_sample(sample_dict, 
+                                 param_name,
+                                 dist.Normal(torch.tensor(0.0, device=self.device),
+                                             torch.tensor(1.0, device=self.device)))
+            with plate_a:
+                self._add_sample(sample_dict,
+                                 "eta_a1",
+                                 dist.Normal(torch.tensor(0.0, device=self.device),
+                                             torch.tensor(1.0, device=self.device)))
+                self._add_sample(sample_dict,
+                                 "eta_a2",
+                                 dist.Normal(torch.tensor(0.0, device=self.device),
+                                             torch.tensor(1.0, device=self.device)))
+                
+            with plate_b:
+                self._add_sample(sample_dict,
+                                 "eta_b1",
+                                 dist.Normal(torch.tensor(0.0, device=self.device),
+                                             torch.tensor(1.0, device=self.device)))
+                self._add_sample(sample_dict,
+                                 "eta_b2",
+                                 dist.Normal(torch.tensor(0.0, device=self.device),
+                                             torch.tensor(1.0, device=self.device)))
+                
+            with plate_a, plate_b:
+                self._add_sample(sample_dict,
+                                 "eta_c",
+                                 dist.Normal(torch.tensor(0.0, device=self.device),
+                                             torch.tensor(1.0, device=self.device)))
+                self._add_sample(sample_dict,
+                                 "eta_d",
+                                 dist.Normal(torch.tensor(0.0, device=self.device),
+                                             torch.tensor(1.0, device=self.device)))
+            
+            a1 = 5 * sample_dict["mu_a1"] + sample_dict["sigma_a1"] * sample_dict["eta_a1"]
+            a2 = sample_dict["mu_a2"] + sample_dict["sigma_a2"] * sample_dict["eta_a2"]
+            b1 = 5 * sample_dict["mu_b1"] + sample_dict["sigma_b1"] * sample_dict["eta_b1"]
+            b2 = 0.1 * sample_dict["mu_b2"] + sample_dict["sigma_b2"] * sample_dict["eta_b2"]
+            c = 0.1 * sample_dict["mu_c"] + sample_dict["sigma_c"] * sample_dict["eta_c"]
+            d = 0.01 * sample_dict["mu_d"] + sample_dict["sigma_d"] * sample_dict["eta_d"]
+
+            with plate_n:
+                c = c[sample_dict["eth"], sample_dict["age"], :]  # (n, b)
+                d = d[sample_dict["eth"], sample_dict["age"], :]  # (n, b)
+                
+                y_hat = a1.squeeze(-2)[sample_dict["eth"], :] + \
+                        a2.squeeze(-2)[sample_dict["eth"], :] * sample_dict["x"] + \
+                        b1[sample_dict["age"], :] + \
+                        b2[sample_dict["age"], :] * sample_dict["x"] + \
+                        c + d * sample_dict["x"]
+                sample_dict["y"] = pyro.sample("y",
+                                               dist.Normal(y_hat, 
+                                                           repeat(sample_dict["sigma_y"], 
+                                                                  "b -> n b", 
+                                                                  n=sample_dict["N"])),
+                                               obs=sample_dict["y"] if "y" in sample_dict else None)
+        return sample_dict
+    
+
+class ARM_earnings_vary_si(BaseVAE):
+    def __init__(self, hidden_dim):
+        super().__init__(103, 12, hidden_dim)
+    
+    def _extract_x_func(self, sample_dict):
+        log_earnings = rearrange(sample_dict["log_earnings"], "n b -> b n")
+        height = rearrange(sample_dict["height"], "n b -> b n")
+        sigma_a1 = sample_dict["sigma_a1"].view(-1, 1)
+        sigma_a2 = sample_dict["sigma_a2"].view(-1, 1)
+        sigma_y = sample_dict["sigma_y"].view(-1, 1)
+        return torch.cat([log_earnings, height, sigma_a1, sigma_a2, sigma_y], dim=-1)
+    
+    def _extract_theta_func(self, sample_dict):
+        mu_a1 = sample_dict["mu_a1"].view(-1, 1)
+        mu_a2 = sample_dict["mu_a2"].view(-1, 1)
+        a1 = rearrange(sample_dict["a1"], "n b -> b n")
+        a2 = rearrange(sample_dict["a2"], "n b -> b n")
+        return torch.cat([mu_a1, mu_a2, a1, a2], dim=-1)
+    
+    def guide(self, batch_size, sample_dict):
+        pyro.module("encoder", self.encoder)
+
+        plate_batch = pyro.plate("plate_batch", batch_size, dim=-1)
+        plate_a = pyro.plate("plate_a", sample_dict["n_eth"], dim=-2)
+
+        x = self.extract_x(sample_dict)
+        theta_loc, theta_scale = self.encoder(x)
+        with plate_batch:    
+            pyro.sample("mu_a1", dist.Normal(theta_loc[:, 0], theta_scale[:, 0]))
+            pyro.sample("mu_a2", dist.Normal(theta_loc[:, 1], theta_scale[:, 1]))
+            with plate_a:
+                pyro.sample("a1", dist.Normal(rearrange(theta_loc[:, 2:7], "b k -> k b"), 
+                                              rearrange(theta_scale[:, 2:7], "b k -> k b")))
+                pyro.sample("a2", dist.Normal(rearrange(theta_loc[:, 7:12], "b k -> k b"), 
+                                              rearrange(theta_scale[:, 7:12], "b k -> k b")))
+
+    def model(self, batch_size, sample_dict):
+        if sample_dict is None:
+            sample_dict = {}
+            sample_dict["N"] = 50
+            sample_dict["n_eth"] = 5
+            assert sample_dict["N"] % sample_dict["n_eth"] == 0
+            sample_dict["height"] = torch.randint(low=150, high=190, size=(sample_dict["N"], batch_size),
+                                                  device=self.device)
+            sample_dict["eth"] = repeat(torch.arange(sample_dict["n_eth"], device=self.device),
+                                        "k -> (r k)", r=sample_dict["N"] // sample_dict["n_eth"])
+            sample_dict["sigma_a1"] = torch.ones(batch_size, device=self.device) * 10
+            sample_dict["sigma_a2"] = torch.ones(batch_size, device=self.device) * 0.01
+            sample_dict["sigma_y"] = torch.ones(batch_size, device=self.device) * 0.1
+        else:
+            sample_dict = copy.copy(sample_dict)
+
+        plate_batch = pyro.plate("plate_batch", batch_size, dim=-1)
+        plate_a = pyro.plate("plate_a", sample_dict["n_eth"], dim=-2)
+        plate_n = pyro.plate("plate_n", sample_dict["N"], dim=-2)
+
+        with plate_batch:
+            sample_dict["mu_a1"] = pyro.sample("mu_a1", dist.Normal(torch.tensor(0.0, device=self.device),
+                                                                    torch.tensor(1.0, device=self.device)))
+            sample_dict["mu_a2"] = pyro.sample("mu_a2", dist.Normal(torch.tensor(0.0, device=self.device),
+                                                                    torch.tensor(1.0, device=self.device)))
+            with plate_a:
+                sample_dict["a1"] = pyro.sample("a1",
+                                                dist.Normal(10 * sample_dict["mu_a1"],
+                                                            sample_dict["sigma_a1"]))
+                sample_dict["a2"] = pyro.sample("a2",
+                                                dist.Normal(0.01 * sample_dict["mu_a2"],
+                                                            sample_dict["sigma_a2"]))
+            with plate_n:
+                y_hat = sample_dict["a1"][..., sample_dict["eth"], :] + \
+                        sample_dict["a2"][..., sample_dict["eth"], :] * sample_dict["height"]
+                sample_dict["log_earnings"] = pyro.sample("log_earnings", 
+                                                        dist.Normal(loc=y_hat,
+                                                                    scale=repeat(sample_dict["sigma_y"],
+                                                                                "b -> n b",
+                                                                                n=sample_dict["N"])),
+                                                        obs=sample_dict["log_earnings"] if "log_earnings" in sample_dict else None)
+        return sample_dict
+
+
+class ARM_earnings_vary_si_chr(BaseVAE):
+    def __init__(self, hidden_dim):
+        super().__init__(103, 12, hidden_dim)
+    
+    def _extract_x_func(self, sample_dict):
+        log_earnings = rearrange(sample_dict["log_earnings"], "n b -> b n")
+        height = rearrange(sample_dict["height"], "n b -> b n")
+        sigma_a1 = sample_dict["sigma_a1"].view(-1, 1)
+        sigma_a2 = sample_dict["sigma_a2"].view(-1, 1)
+        sigma_y = sample_dict["sigma_y"].view(-1, 1)
+        return torch.cat([log_earnings, height, sigma_a1, sigma_a2, sigma_y], dim=-1)
+    
+    def _extract_theta_func(self, sample_dict):
+        mu_a1 = sample_dict["mu_a1"].view(-1, 1)
+        mu_a2 = sample_dict["mu_a2"].view(-1, 1)
+        eta1 = rearrange(sample_dict["eta1"], "n b -> b n")
+        eta2 = rearrange(sample_dict["eta2"], "n b -> b n")
+        return torch.cat([mu_a1, mu_a2, eta1, eta2], dim=-1)
+    
+    def guide(self, batch_size, sample_dict):
+        pyro.module("encoder", self.encoder)
+
+        plate_batch = pyro.plate("plate_batch", batch_size, dim=-1)
+        plate_a = pyro.plate("plate_a", sample_dict["n_eth"], dim=-2)
+        x = self.extract_x(sample_dict)
+        theta_loc, theta_scale = self.encoder(x)
+        with plate_batch:    
+            pyro.sample("mu_a1", dist.Normal(theta_loc[:, 0], theta_scale[:, 0]))
+            pyro.sample("mu_a2", dist.Normal(theta_loc[:, 1], theta_scale[:, 1]))
+            with plate_a:
+                pyro.sample("eta1", dist.Normal(rearrange(theta_loc[:, 2:7], "b k -> k b"), 
+                                                rearrange(theta_scale[:, 2:7], "b k -> k b")))
+                pyro.sample("eta2", dist.Normal(rearrange(theta_loc[:, 7:12], "b k -> k b"), 
+                                                rearrange(theta_scale[:, 7:12], "b k -> k b")))
+
+    def model(self, batch_size, sample_dict):
+        if sample_dict is None:
+            sample_dict = {}
+            sample_dict["N"] = 50
+            sample_dict["n_eth"] = 5
+            assert sample_dict["N"] % sample_dict["n_eth"] == 0
+            sample_dict["height"] = torch.randint(low=150, high=190, size=(sample_dict["N"], batch_size),
+                                                  device=self.device)
+            sample_dict["eth"] = repeat(torch.arange(sample_dict["n_eth"], device=self.device),
+                                        "k -> (r k)", r=sample_dict["N"] // sample_dict["n_eth"])
+            sample_dict["sigma_a1"] = torch.ones(batch_size, device=self.device) * 10
+            sample_dict["sigma_a2"] = torch.ones(batch_size, device=self.device) * 0.1
+            sample_dict["sigma_y"] = torch.ones(batch_size, device=self.device) * 0.1
+        else:
+            sample_dict = copy.copy(sample_dict)
+
+        plate_batch = pyro.plate("plate_batch", batch_size, dim=-1)
+        plate_a = pyro.plate("plate_a", sample_dict["n_eth"], dim=-2)
+        plate_n = pyro.plate("plate_n", sample_dict["N"], dim=-2)
+
+        with plate_batch:
+            sample_dict["mu_a1"] = pyro.sample("mu_a1", dist.Normal(torch.tensor(0.0, device=self.device),
+                                                                    torch.tensor(1.0, device=self.device)))
+            sample_dict["mu_a2"] = pyro.sample("mu_a2", dist.Normal(torch.tensor(0.0, device=self.device),
+                                                                    torch.tensor(1.0, device=self.device)))
+            with plate_a:
+                sample_dict["eta1"] = pyro.sample("eta1", dist.Normal(torch.tensor(0.0, device=self.device),
+                                                                      torch.tensor(1.0, device=self.device)))
+                sample_dict["eta2"] = pyro.sample("eta2", dist.Normal(torch.tensor(0.0, device=self.device),
+                                                                      torch.tensor(1.0, device=self.device)))
+            a1 = 10 * sample_dict["mu_a1"] + sample_dict["sigma_a1"] * sample_dict["eta1"]
+            a2 = 0.1 * sample_dict["mu_a2"] + sample_dict["sigma_a2"] * sample_dict["eta2"]
+            with plate_n:
+                y_hat = a1[..., sample_dict["eth"], :] + \
+                        a2[..., sample_dict["eth"], :] * sample_dict["height"]
+                sample_dict["log_earnings"] = pyro.sample("log_earnings", 
+                                                        dist.Normal(loc=y_hat,
+                                                                    scale=repeat(sample_dict["sigma_y"],
+                                                                                "b -> n b",
+                                                                                n=sample_dict["N"])),
+                                                        obs=sample_dict["log_earnings"] if "log_earnings" in sample_dict else None)
+        return sample_dict
+    
+
+class ARM_election88_ch14(BaseVAE):
+    def __init__(self, hidden_dim):
+        super().__init__(301, 13, hidden_dim)
+    
+    def _extract_x_func(self, sample_dict):
+        black = rearrange(sample_dict["black"], "n b -> b n")
+        female = rearrange(sample_dict["female"], "n b -> b n")
+        y = rearrange(sample_dict["y"], "n b -> b n")
+        sigma_a = sample_dict["sigma_a"].view(-1, 1)
+        return torch.cat([black, female, y, sigma_a], dim=-1)
+    
+    def _extract_theta_func(self, sample_dict):
+        mu_a = sample_dict["mu_a"].view(-1, 1)
+        a = rearrange(sample_dict["a"], "k b -> b k")
+        b = rearrange(sample_dict["b"], "k b -> b k")
+        return torch.cat([mu_a, a, b], dim=-1)
+    
+    def guide(self, batch_size, sample_dict):
+        pyro.module("encoder", self.encoder)
+
+        plate_batch = pyro.plate("plate_batch", batch_size, dim=-1)
+        plate_a = pyro.plate("plate_a", sample_dict["n_state"], dim=-2)
+        plate_b = pyro.plate("plate_b", 2, dim=-2)
+
+        x = self.extract_x(sample_dict)
+        theta_loc, theta_scale = self.encoder(x)
+        with plate_batch:    
+            pyro.sample("mu_a", dist.Normal(theta_loc[:, 0], theta_scale[:, 0]))
+            with plate_a:
+                pyro.sample("a", dist.Normal(rearrange(theta_loc[:, 1:11], "b k -> k b"),
+                                             rearrange(theta_scale[:, 1:11], "b k -> k b")))
+            with plate_b:
+                pyro.sample("b", dist.Normal(rearrange(theta_loc[:, 11:13], "b k -> k b"),
+                                             rearrange(theta_scale[:, 11:13], "b k -> k b")))
+
+    def model(self, batch_size, sample_dict):
+        if sample_dict is None:
+            sample_dict = {}
+            sample_dict["N"] = 100
+            sample_dict["n_state"] = 10
+            assert sample_dict["N"] % sample_dict["n_state"] == 0
+            sample_dict["state"] = repeat(torch.arange(sample_dict["n_state"], device=self.device),
+                                          "k -> (r k)", r=sample_dict["N"] // sample_dict["n_state"])
+            sample_dict["female"] = torch.randint(low=0, high=2, size=(sample_dict["N"], batch_size),
+                                                  device=self.device)
+            sample_dict["black"] = torch.randint(low=0, high=2, size=(sample_dict["N"], batch_size),
+                                                 device=self.device)
+            sample_dict["sigma_a"] = torch.ones(batch_size, device=self.device) * 1
+        else:
+            sample_dict = copy.copy(sample_dict)
+
+        plate_batch = pyro.plate("plate_batch", batch_size, dim=-1)
+        plate_a = pyro.plate("plate_a", sample_dict["n_state"], dim=-2)
+        plate_b = pyro.plate("plate_b", 2, dim=-2)
+        plate_n = pyro.plate("plate_n", sample_dict["N"], dim=-2)
+
+        with plate_batch:
+            sample_dict["mu_a"] = pyro.sample("mu_a", dist.Normal(torch.tensor(0.0, device=self.device),
+                                                                  torch.tensor(1.0, device=self.device)))
+            with plate_a:
+                sample_dict["a"] = pyro.sample("a", dist.Normal(sample_dict["mu_a"],
+                                                                sample_dict["sigma_a"]))
+            with plate_b:
+                sample_dict["b"] = pyro.sample("b", dist.Normal(torch.tensor(0.0, device=self.device),
+                                                                torch.tensor(100.0, device=self.device)))
+            with plate_n:
+                y_hat = sample_dict["b"][..., 0, :].unsqueeze(-2) * sample_dict["black"] + \
+                        sample_dict["b"][..., 1, :].unsqueeze(-2) * sample_dict["female"] + \
+                        sample_dict["a"][..., sample_dict["state"], :]
+                sample_dict["y"] = pyro.sample("y", 
+                                               dist.Bernoulli(logits=y_hat),
+                                              obs=sample_dict["y"] if "y" in sample_dict else None)
+        return sample_dict
+
+
+class ARM_election88_ch19(BaseVAE):
+    def __init__(self, hidden_dim):
+        super().__init__(244, 18, hidden_dim)
+    
+    def _extract_x_func(self, sample_dict):
+        black = rearrange(sample_dict["black"], "n b -> b n")
+        female = rearrange(sample_dict["female"], "n b -> b n")
+        y = rearrange(sample_dict["y"], "n b -> b n")
+        sigma_age = sample_dict["sigma_age"].view(-1, 1)
+        sigma_edu = sample_dict["sigma_edu"].view(-1, 1)
+        sigma_age_edu = sample_dict["sigma_age_edu"].view(-1, 1)
+        sigma_state = sample_dict["sigma_state"].view(-1, 1)
+        return torch.cat([black, female, y, sigma_age, sigma_edu, sigma_age_edu, sigma_state], dim=-1)
+    
+    def _extract_theta_func(self, sample_dict):
+        mu_age = sample_dict["mu_age"].view(-1, 1)
+        mu_edu = sample_dict["mu_edu"].view(-1, 1)
+        mu_age_edu = sample_dict["mu_age_edu"].view(-1, 1)
+        mu_state = sample_dict["mu_state"].view(-1, 1)
+        beta = rearrange(sample_dict["beta"], "... b -> b (...)")
+        b_age = rearrange(sample_dict["b_age"], "... b -> b (...)")
+        b_edu = rearrange(sample_dict["b_edu"], "... b -> b (...)")
+        b_age_edu = rearrange(sample_dict["b_age_edu"], "... b -> b (...)")
+        b_state = rearrange(sample_dict["b_state"], "... b -> b (...)")
+        return torch.cat([mu_age, mu_edu, mu_age_edu, mu_state,
+                          beta, b_age, b_edu, b_age_edu, b_state], dim=-1)
+    
+    def guide(self, batch_size, sample_dict):
+        pyro.module("encoder", self.encoder)
+
+        plate_batch = pyro.plate("plate_batch", batch_size, dim=-1)
+        plate_beta = pyro.plate("plate_beta", 4, dim=-2)
+        plate_age = pyro.plate("plate_age", sample_dict["n_age"], dim=-3)
+        plate_edu = pyro.plate("plate_edu", sample_dict["n_edu"], dim=-2)
+        plate_state = pyro.plate("plate_state", sample_dict["n_state"], dim=-2)
+
+        x = self.extract_x(sample_dict)
+        theta_loc, theta_scale = self.encoder(x)
+        with plate_batch:    
+            pyro.sample("mu_age", dist.Normal(theta_loc[:, 0], theta_scale[:, 0]))
+            pyro.sample("mu_edu", dist.Normal(theta_loc[:, 1], theta_scale[:, 1]))
+            pyro.sample("mu_age_edu", dist.Normal(theta_loc[:, 2], theta_scale[:, 2]))
+            pyro.sample("mu_state", dist.Normal(theta_loc[:, 3], theta_scale[:, 3]))
+            with plate_beta:
+                pyro.sample("beta", dist.Normal(rearrange(theta_loc[:, 4:8], "b k -> k b"),
+                                                rearrange(theta_scale[:, 4:8], "b k -> k b")))
+            with plate_age:
+                pyro.sample("b_age", dist.Normal(rearrange(theta_loc[:, 8:10], "b k -> k 1 b"),
+                                                 rearrange(theta_scale[:, 8:10], "b k -> k 1 b")))
+            with plate_edu:
+                pyro.sample("b_edu", dist.Normal(rearrange(theta_loc[:, 10:12], "b k -> k b"),
+                                                 rearrange(theta_scale[:, 10:12], "b k -> k b")))
+            with plate_age, plate_edu:
+                pyro.sample("b_age_edu",
+                            dist.Normal(rearrange(theta_loc[:, 12:16], 
+                                                  "b (k1 k2) -> k1 k2 b", 
+                                                  k1=sample_dict["n_age"], 
+                                                  k2=sample_dict["n_edu"]),
+                                        rearrange(theta_scale[:, 12:16],
+                                                  "b (k1 k2) -> k1 k2 b", 
+                                                  k1=sample_dict["n_age"], 
+                                                  k2=sample_dict["n_edu"])
+                                        )
+                            )
+            with plate_state:
+                pyro.sample("b_state", dist.Normal(rearrange(theta_loc[:, 16:18], "b k -> k b"),
+                                                   rearrange(theta_scale[:, 16:18], "b k -> k b")))
+
+    def model(self, batch_size, sample_dict):
+        if sample_dict is None:
+            sample_dict = {}
+            sample_dict["N"] = 80
+            sample_dict["n_state"] = 2
+            sample_dict["n_age"] = 2
+            sample_dict["n_edu"] = 2
+            total_permutate = sample_dict["n_state"] * sample_dict["n_age"] * sample_dict["n_edu"]
+            assert sample_dict["N"] % total_permutate == 0
+            state_age_edu_region_mesh = torch.stack(torch.meshgrid(
+                torch.arange(sample_dict["n_state"], device=self.device),
+                torch.arange(sample_dict["n_age"], device=self.device),
+                torch.arange(sample_dict["n_edu"], device=self.device),
+            indexing="ij"), dim=-1)  # (2, 2, 2, 2, 3)
+            sample_dict["state"] = repeat(state_age_edu_region_mesh[..., 0].reshape(-1),
+                                          "k -> (r k)", r=sample_dict["N"] // total_permutate)
+            sample_dict["age"] = repeat(state_age_edu_region_mesh[..., 1].reshape(-1),
+                                        "k -> (r k)", r=sample_dict["N"] // total_permutate)
+            sample_dict["edu"] = repeat(state_age_edu_region_mesh[..., 2].reshape(-1),
+                                        "k -> (r k)", r=sample_dict["N"] // total_permutate)
+            sample_dict["female"] = torch.randint(low=0, high=2, size=(sample_dict["N"], batch_size),
+                                                  device=self.device)
+            sample_dict["black"] = torch.randint(low=0, high=2, size=(sample_dict["N"], batch_size),
+                                                 device=self.device)
+            sample_dict["sigma_age"] = torch.ones(batch_size, device=self.device) * 10
+            sample_dict["sigma_edu"] = torch.ones(batch_size, device=self.device) * 10
+            sample_dict["sigma_age_edu"] = torch.ones(batch_size, device=self.device) * 10
+            sample_dict["sigma_state"] = torch.ones(batch_size, device=self.device) * 10
+        else:
+            sample_dict = copy.copy(sample_dict)
+
+        plate_batch = pyro.plate("plate_batch", batch_size, dim=-1)
+        plate_beta = pyro.plate("plate_beta", 4, dim=-2)
+        plate_age = pyro.plate("plate_age", sample_dict["n_age"], dim=-3)
+        plate_edu = pyro.plate("plate_edu", sample_dict["n_edu"], dim=-2)
+        plate_state = pyro.plate("plate_state", sample_dict["n_state"], dim=-2)
+        plate_n = pyro.plate("plate_n", sample_dict["N"], dim=-2)
+
+        with plate_batch:
+            sample_dict["mu_age"] = pyro.sample("mu_age", dist.Normal(torch.tensor(0.0, device=self.device),
+                                                                      torch.tensor(1.0, device=self.device)))
+            sample_dict["mu_edu"] = pyro.sample("mu_edu", dist.Normal(torch.tensor(0.0, device=self.device),
+                                                                      torch.tensor(1.0, device=self.device)))
+            sample_dict["mu_age_edu"] = pyro.sample("mu_age_edu", dist.Normal(torch.tensor(0.0, device=self.device),
+                                                                              torch.tensor(1.0, device=self.device)))
+            sample_dict["mu_state"] = pyro.sample("mu_state", dist.Normal(torch.tensor(0.0, device=self.device),
+                                                                          torch.tensor(1.0, device=self.device)))
+            with plate_beta:
+                sample_dict["beta"] = pyro.sample("beta", dist.Normal(torch.tensor(0.0, device=self.device),
+                                                                      torch.tensor(100.0, device=self.device)))  #(4, b)
+            with plate_age:
+                sample_dict["b_age"] = pyro.sample("b_age", dist.Normal(100 * sample_dict["mu_age"],
+                                                                        sample_dict["sigma_age"]))  # (n_age, 1, b)
+            with plate_edu:
+                sample_dict["b_edu"] = pyro.sample("b_edu", dist.Normal(100 * sample_dict["mu_edu"],
+                                                                        sample_dict["sigma_edu"]))  # (n_edu, b)
+            with plate_age, plate_edu:
+                sample_dict["b_age_edu"] = pyro.sample("b_age_edu", dist.Normal(100 * sample_dict["mu_age_edu"],
+                                                                                sample_dict["sigma_age_edu"]))  # (n_age, n_edu, b)
+            with plate_state:
+                sample_dict["b_state"] = pyro.sample("b_state", dist.Normal(10 * sample_dict["mu_state"],
+                                                                            sample_dict["sigma_state"]))  # (n_state, b)
+            with plate_n:
+                Xbeta = sample_dict["beta"][..., 0, :].unsqueeze(-2) + \
+                        sample_dict["beta"][..., 1, :].unsqueeze(-2) * sample_dict["female"] + \
+                        sample_dict["beta"][..., 2, :].unsqueeze(-2) * sample_dict["black"] + \
+                        sample_dict["beta"][..., 3, :].unsqueeze(-2) * sample_dict["female"] * sample_dict["black"] + \
+                        sample_dict["b_age"][..., sample_dict["age"], :, :].squeeze(-2) + \
+                        sample_dict["b_edu"][..., sample_dict["edu"], :] + \
+                        sample_dict["b_age_edu"][..., sample_dict["age"], sample_dict["edu"], :] + \
+                        sample_dict["b_state"][..., sample_dict["state"], :]
+                sample_dict["y"] = pyro.sample("y",
+                                               dist.Bernoulli(logits=Xbeta),
+                                               obs=sample_dict["y"] if "y" in sample_dict else None)
+        return sample_dict
+
+
+class ARM_electric(BaseVAE):
+    def __init__(self, hidden_dim):
+        super().__init__(102, 7, hidden_dim)
+    
+    def _extract_x_func(self, sample_dict):
+        treatment = rearrange(sample_dict["treatment"], "n b -> b n")
+        y = rearrange(sample_dict["y"], "n b -> b n")
+        sigma_a = sample_dict["sigma_a"].view(-1, 1)
+        sigma_y = sample_dict["sigma_y"].view(-1, 1)
+        return torch.cat([treatment, y, sigma_a, sigma_y], dim=-1)
+    
+    def _extract_theta_func(self, sample_dict):
+        mu_a = sample_dict["mu_a"].view(-1, 1)
+        a = rearrange(sample_dict["a"], "k b -> b k")
+        beta = sample_dict["beta"].view(-1, 1)
+        return torch.cat([mu_a, a, beta], dim=-1)
+    
+    def guide(self, batch_size, sample_dict):
+        pyro.module("encoder", self.encoder)
+
+        plate_batch = pyro.plate("plate_batch", batch_size, dim=-1)
+        plate_pair = pyro.plate("plate_pair", sample_dict["n_pair"], dim=-2)
+
+        x = self.extract_x(sample_dict)
+        theta_loc, theta_scale = self.encoder(x)
+        with plate_batch:    
+            pyro.sample("mu_a", dist.Normal(theta_loc[:, 0], theta_scale[:, 0]))
+            with plate_pair:
+                pyro.sample("a", dist.Normal(rearrange(theta_loc[:, 1:6], "b k -> k b"),
+                                             rearrange(theta_scale[:, 1:6], "b k -> k b")))
+            pyro.sample("beta", dist.Normal(theta_loc[:, 6], theta_scale[:, 6]))
+
+    def model(self, batch_size, sample_dict):
+        if sample_dict is None:
+            sample_dict = {}
+            sample_dict["N"] = 50
+            sample_dict["n_pair"] = 5
+            assert sample_dict["N"] % sample_dict["n_pair"] == 0
+            sample_dict["pair"] = repeat(torch.arange(sample_dict["n_pair"], device=self.device),
+                                        "k -> (r k)", r=sample_dict["N"] // sample_dict["n_pair"])
+            sample_dict["treatment"] = torch.randint(low=0, high=10,
+                                                     size=(sample_dict["N"], batch_size),
+                                                     device=self.device)
+            sample_dict["sigma_a"] = torch.ones(batch_size, device=self.device) * 10
+            sample_dict["sigma_y"] = torch.ones(batch_size, device=self.device) * 0.1
+        else:
+            sample_dict = copy.copy(sample_dict)
+
+        plate_batch = pyro.plate("plate_batch", batch_size, dim=-1)
+        plate_pair = pyro.plate("plate_pair", sample_dict["n_pair"], dim=-2)
+        plate_n = pyro.plate("plate_n", sample_dict["N"], dim=-2)
+
+        with plate_batch:
+            sample_dict["mu_a"] = pyro.sample("mu_a", dist.Normal(torch.tensor(0.0, device=self.device),
+                                                                  torch.tensor(1.0, device=self.device)))
+            with plate_pair:
+                sample_dict["a"] = pyro.sample("a", dist.Normal(100 * sample_dict["mu_a"],
+                                                                sample_dict["sigma_a"]))
+            sample_dict["beta"] = pyro.sample("beta", dist.Normal(torch.tensor(0.0, device=self.device),
+                                                                  torch.tensor(1.0, device=self.device)))
+            with plate_n:
+                y_hat = sample_dict["a"][..., sample_dict["pair"], :] + sample_dict["beta"] * sample_dict["treatment"]
+                sample_dict["y"] = pyro.sample("y",
+                                               dist.Normal(y_hat, 
+                                                           repeat(sample_dict["sigma_y"],
+                                                                  "b -> n b", n=sample_dict["N"])),
+                                               obs=sample_dict["y"] if "y" in sample_dict else None)
+        return sample_dict
+
+
+class ARM_electric_1a(BaseVAE):
+    def __init__(self, hidden_dim):
+        super().__init__(158, 13, hidden_dim)
+    
+    def _extract_x_func(self, sample_dict):
+        treatment = rearrange(sample_dict["treatment"], "n b -> b n")
+        y = rearrange(sample_dict["y"], "n b -> b n")
+        sigma_a = rearrange(sample_dict["sigma_a"], "k b -> b k")
+        sigma_y = rearrange(sample_dict["sigma_y"], "k b -> b k")
+        return torch.cat([treatment, y, sigma_a, sigma_y], dim=-1)
+    
+    def _extract_theta_func(self, sample_dict):
+        mu_a = rearrange(sample_dict["mu_a"], "k b -> b k")
+        a = rearrange(sample_dict["a"], "k b -> b k")
+        b = rearrange(sample_dict["b"], "k b -> b k")
+        return torch.cat([mu_a, a, b], dim=-1)
+    
+    def guide(self, batch_size, sample_dict):
+        pyro.module("encoder", self.encoder)
+
+        plate_batch = pyro.plate("plate_batch", batch_size, dim=-1)
+        plate_pair = pyro.plate("plate_pair", sample_dict["n_pair"], dim=-2)
+        plate_grade = pyro.plate("plate_grade", sample_dict["n_grade"], dim=-2)
+        plate_grade_pair = pyro.plate("plate_grade_pair", sample_dict["n_pair"], dim=-2)
+
+        x = self.extract_x(sample_dict)
+        theta_loc, theta_scale = self.encoder(x)
+        with plate_batch:
+            with plate_grade_pair:    
+                pyro.sample("mu_a", dist.Normal(rearrange(theta_loc[:, 0:5], "b k -> k b"), 
+                                                rearrange(theta_scale[:, 0:5], "b k -> k b")))
+            with plate_pair:
+                pyro.sample("a", dist.Normal(rearrange(theta_loc[:, 5:10], "b k -> k b"),
+                                             rearrange(theta_scale[:, 5:10], "b k -> k b")))
+            with plate_grade:
+                pyro.sample("b", dist.Normal(rearrange(theta_loc[:, 10:13], "b k -> k b"),
+                                             rearrange(theta_scale[:, 10:13], "b k -> k b")))
+
+    def model(self, batch_size, sample_dict):
+        if sample_dict is None:
+            sample_dict = {}
+            sample_dict["N"] = 75
+            sample_dict["n_pair"] = 5
+            sample_dict["n_grade"] = 3
+            assert sample_dict["N"] % (sample_dict["n_pair"] * sample_dict["n_grade"]) == 0
+            grade_pair_mesh = torch.stack(torch.meshgrid(
+                torch.arange(sample_dict["n_grade"], device=self.device),
+                torch.arange(sample_dict["n_pair"], device=self.device),
+                indexing="ij"
+            ), dim=-1)  # (3, 5, 2)
+            sample_dict["grade"] = repeat(grade_pair_mesh[..., 0],
+                                          "k1 k2 -> (r k1 k2)",
+                                          r=sample_dict["N"] // (sample_dict["n_pair"] * sample_dict["n_grade"]))
+            sample_dict["pair"] = repeat(grade_pair_mesh[..., 1],
+                                          "k1 k2 -> (r k1 k2)",
+                                          r=sample_dict["N"] // (sample_dict["n_pair"] * sample_dict["n_grade"]))
+            sample_dict["grade_pair"] = torch.randperm(sample_dict["n_pair"],
+                                                        generator=torch.Generator(device=self.device).manual_seed(1234),
+                                                        device=self.device)
+            sample_dict["treatment"] = torch.randint(low=0, high=10,
+                                                     size=(sample_dict["N"], batch_size),
+                                                     device=self.device)
+            sample_dict["sigma_a"] = repeat(torch.arange(sample_dict["n_pair"], device=self.device) + 1,
+                                            "n_pair -> n_pair b",
+                                            b=batch_size)
+            sample_dict["sigma_y"] = repeat((torch.arange(sample_dict["n_grade"], device=self.device) + 1) * 0.1,
+                                            "n_grade -> n_grade b",
+                                             b=batch_size)
+        else:
+            sample_dict = copy.copy(sample_dict)
+
+        plate_batch = pyro.plate("plate_batch", batch_size, dim=-1)
+        plate_pair = pyro.plate("plate_pair", sample_dict["n_pair"], dim=-2)
+        plate_grade = pyro.plate("plate_grade", sample_dict["n_grade"], dim=-2)
+        plate_grade_pair = pyro.plate("plate_grade_pair", sample_dict["n_pair"], dim=-2)
+        plate_n = pyro.plate("plate_n", sample_dict["N"], dim=-2)
+
+        with plate_batch:
+            with plate_grade_pair:
+                sample_dict["mu_a"] = pyro.sample("mu_a", dist.Normal(torch.tensor(0.0, device=self.device),
+                                                                      torch.tensor(1.0, device=self.device)))
+            sigma_a_hat = sample_dict["sigma_a"][..., sample_dict["grade_pair"], :]
+            mu_a_hat = 100 * sample_dict["mu_a"][..., sample_dict["grade_pair"], :]
+            with plate_pair:
+                sample_dict["a"] = pyro.sample("a", dist.Normal(mu_a_hat, sigma_a_hat))
+            with plate_grade:
+                sample_dict["b"] = pyro.sample("b", dist.Normal(torch.tensor(0.0, device=self.device),
+                                                                torch.tensor(100.0, device=self.device)))
+            sigma_y_hat = sample_dict["sigma_y"][..., sample_dict["grade"], :]
+            with plate_n:
+                y_hat = sample_dict["a"][..., sample_dict["pair"], :] + \
+                        sample_dict["b"][..., sample_dict["grade"], :] * sample_dict["treatment"]
+                sample_dict["y"] = pyro.sample("y", 
+                                               dist.Normal(y_hat, sigma_y_hat),
+                                               obs=sample_dict["y"] if "y" in sample_dict else None)
+        return sample_dict
+
+
+class ARM_electric_1a_chr(BaseVAE):
+    def __init__(self, hidden_dim):
+        super().__init__(158, 13, hidden_dim)
+    
+    def _extract_x_func(self, sample_dict):
+        treatment = rearrange(sample_dict["treatment"], "n b -> b n")
+        y = rearrange(sample_dict["y"], "n b -> b n")
+        sigma_a = rearrange(sample_dict["sigma_a"], "k b -> b k")
+        sigma_y = rearrange(sample_dict["sigma_y"], "k b -> b k")
+        return torch.cat([treatment, y, sigma_a, sigma_y], dim=-1)
+    
+    def _extract_theta_func(self, sample_dict):
+        mu_a = rearrange(sample_dict["mu_a"], "k b -> b k")
+        eta_a = rearrange(sample_dict["eta_a"], "k b -> b k")
+        b = rearrange(sample_dict["b"], "k b -> b k")
+        return torch.cat([mu_a, eta_a, b], dim=-1)
+    
+    def guide(self, batch_size, sample_dict):
+        pyro.module("encoder", self.encoder)
+
+        plate_batch = pyro.plate("plate_batch", batch_size, dim=-1)
+        plate_pair = pyro.plate("plate_pair", sample_dict["n_pair"], dim=-2)
+        plate_grade = pyro.plate("plate_grade", sample_dict["n_grade"], dim=-2)
+        plate_grade_pair = pyro.plate("plate_grade_pair", sample_dict["n_pair"], dim=-2)
+
+        x = self.extract_x(sample_dict)
+        theta_loc, theta_scale = self.encoder(x)
+        with plate_batch:
+            with plate_grade_pair:    
+                pyro.sample("mu_a", dist.Normal(rearrange(theta_loc[:, 0:5], "b k -> k b"), 
+                                                rearrange(theta_scale[:, 0:5], "b k -> k b")))
+            with plate_pair:
+                pyro.sample("eta_a", dist.Normal(rearrange(theta_loc[:, 5:10], "b k -> k b"),
+                                                 rearrange(theta_scale[:, 5:10], "b k -> k b")))
+            with plate_grade:
+                pyro.sample("b", dist.Normal(rearrange(theta_loc[:, 10:13], "b k -> k b"),
+                                             rearrange(theta_scale[:, 10:13], "b k -> k b")))
+
+    def model(self, batch_size, sample_dict):
+        if sample_dict is None:
+            sample_dict = {}
+            sample_dict["N"] = 75
+            sample_dict["n_pair"] = 5
+            sample_dict["n_grade"] = 3
+            assert sample_dict["N"] % (sample_dict["n_pair"] * sample_dict["n_grade"]) == 0
+            grade_pair_mesh = torch.stack(torch.meshgrid(
+                torch.arange(sample_dict["n_grade"], device=self.device),
+                torch.arange(sample_dict["n_pair"], device=self.device),
+                indexing="ij"
+            ), dim=-1)  # (3, 5, 2)
+            sample_dict["grade"] = repeat(grade_pair_mesh[..., 0],
+                                          "k1 k2 -> (r k1 k2)",
+                                          r=sample_dict["N"] // (sample_dict["n_pair"] * sample_dict["n_grade"]))
+            sample_dict["pair"] = repeat(grade_pair_mesh[..., 1],
+                                          "k1 k2 -> (r k1 k2)",
+                                          r=sample_dict["N"] // (sample_dict["n_pair"] * sample_dict["n_grade"]))
+            sample_dict["grade_pair"] = torch.randperm(sample_dict["n_pair"],
+                                                        generator=torch.Generator(device=self.device).manual_seed(1234),
+                                                        device=self.device)
+            sample_dict["treatment"] = torch.randint(low=0, high=10,
+                                                     size=(sample_dict["N"], batch_size),
+                                                     device=self.device)
+            sample_dict["sigma_a"] = repeat(torch.arange(sample_dict["n_pair"], device=self.device) + 1,
+                                            "n_pair -> n_pair b",
+                                            b=batch_size)
+            sample_dict["sigma_y"] = repeat((torch.arange(sample_dict["n_grade"], device=self.device) + 1) * 0.1,
+                                            "n_grade -> n_grade b",
+                                             b=batch_size)
+        else:
+            sample_dict = copy.copy(sample_dict)
+
+        plate_batch = pyro.plate("plate_batch", batch_size, dim=-1)
+        plate_pair = pyro.plate("plate_pair", sample_dict["n_pair"], dim=-2)
+        plate_grade = pyro.plate("plate_grade", sample_dict["n_grade"], dim=-2)
+        plate_grade_pair = pyro.plate("plate_grade_pair", sample_dict["n_pair"], dim=-2)
+        plate_n = pyro.plate("plate_n", sample_dict["N"], dim=-2)
+
+        with plate_batch:
+            with plate_grade_pair:
+                sample_dict["mu_a"] = pyro.sample("mu_a", dist.Normal(torch.tensor(0.0, device=self.device),
+                                                                      torch.tensor(1.0, device=self.device)))
+            sigma_a_hat = sample_dict["sigma_a"][..., sample_dict["grade_pair"], :]
+            mu_a_hat = 100 * sample_dict["mu_a"][..., sample_dict["grade_pair"], :]
+            with plate_pair:
+                sample_dict["eta_a"] = pyro.sample("eta_a", dist.Normal(torch.tensor(0.0, device=self.device), 
+                                                                        torch.tensor(1.0, device=self.device)))
+            a = mu_a_hat + sigma_a_hat * sample_dict["eta_a"]
+            with plate_grade:
+                sample_dict["b"] = pyro.sample("b", dist.Normal(torch.tensor(0.0, device=self.device),
+                                                                torch.tensor(100.0, device=self.device)))
+            sigma_y_hat = sample_dict["sigma_y"][..., sample_dict["grade"], :]
+            with plate_n:
+                y_hat = a[..., sample_dict["pair"], :] + \
+                        sample_dict["b"][..., sample_dict["grade"], :] * sample_dict["treatment"]
+                sample_dict["y"] = pyro.sample("y", 
+                                               dist.Normal(y_hat, sigma_y_hat),
+                                               obs=sample_dict["y"] if "y" in sample_dict else None)
+        return sample_dict
+
+
+class ARM_electric_1b(BaseVAE):
+    def __init__(self, hidden_dim):
+        super().__init__(152, 8, hidden_dim)
+    
+    def _extract_x_func(self, sample_dict):
+        treatment = rearrange(sample_dict["treatment"], "n b -> b n")
+        pre_test = rearrange(sample_dict["pre_test"], "n b -> b n")
+        y = rearrange(sample_dict["y"], "n b -> b n")
+        sigma_a = rearrange(sample_dict["sigma_a"], "b -> b 1")
+        sigma_y = rearrange(sample_dict["sigma_y"], "b -> b 1")
+        return torch.cat([treatment, pre_test, y, sigma_a, sigma_y], dim=-1)
+    
+    def _extract_theta_func(self, sample_dict):
+        mu_a = rearrange(sample_dict["mu_a"], "b -> b 1")
+        a = rearrange(sample_dict["a"], "k b -> b k")
+        beta = rearrange(sample_dict["beta"], "k b -> b k")
+        return torch.cat([mu_a, a, beta], dim=-1)
+    
+    def guide(self, batch_size, sample_dict):
+        pyro.module("encoder", self.encoder)
+
+        plate_batch = pyro.plate("plate_batch", batch_size, dim=-1)
+        plate_pair = pyro.plate("plate_pair", sample_dict["n_pair"], dim=-2)
+        plate_beta = pyro.plate("plate_beta", 2, dim=-2)
+        
+        x = self.extract_x(sample_dict)
+        theta_loc, theta_scale = self.encoder(x)
+        with plate_batch:
+            pyro.sample("mu_a", dist.Normal(rearrange(theta_loc[:, 0:1], "b k -> k b"), 
+                                            rearrange(theta_scale[:, 0:1], "b k -> k b")))
+            with plate_pair:
+                pyro.sample("a", dist.Normal(rearrange(theta_loc[:, 1:6], "b k -> k b"),
+                                             rearrange(theta_scale[:, 1:6], "b k -> k b")))
+            with plate_beta:
+                pyro.sample("beta", dist.Normal(rearrange(theta_loc[:, 6:8], "b k -> k b"),
+                                             rearrange(theta_scale[:, 6:8], "b k -> k b")))
+
+    def model(self, batch_size, sample_dict):
+        if sample_dict is None:
+            sample_dict = {}
+            sample_dict["N"] = 50
+            sample_dict["n_pair"] = 5
+            assert sample_dict["N"] % sample_dict["n_pair"] == 0
+            sample_dict["pair"] = repeat(torch.arange(sample_dict["n_pair"]),
+                                          "k -> (r k)",
+                                          r=sample_dict["N"] // sample_dict["n_pair"])
+            sample_dict["treatment"] = torch.randint(low=0, high=10,
+                                                     size=(sample_dict["N"], batch_size),
+                                                     device=self.device)
+            sample_dict["pre_test"] = torch.randint(low=20, high=40,
+                                                     size=(sample_dict["N"], batch_size),
+                                                     device=self.device)
+            sample_dict["sigma_a"] = torch.ones(batch_size, device=self.device) * 10
+            sample_dict["sigma_y"] = torch.ones(batch_size, device=self.device) * 0.1
+        else:
+            sample_dict = copy.copy(sample_dict)
+
+        plate_batch = pyro.plate("plate_batch", batch_size, dim=-1)
+        plate_pair = pyro.plate("plate_pair", sample_dict["n_pair"], dim=-2)
+        plate_beta = pyro.plate("plate_beta", 2, dim=-2)
+        plate_n = pyro.plate("plate_n", sample_dict["N"], dim=-2)
+
+        with plate_batch:
+            sample_dict["mu_a"] = pyro.sample("mu_a", dist.Normal(torch.tensor(0.0, device=self.device),
+                                                                  torch.tensor(1.0, device=self.device)))
+            with plate_pair:
+                sample_dict["a"] = pyro.sample("a", dist.Normal(100 * sample_dict["mu_a"], sample_dict["sigma_a"]))
+            with plate_beta:
+                sample_dict["beta"] = pyro.sample("beta", dist.Normal(torch.tensor(0.0, device=self.device),
+                                                                      torch.tensor(100.0, device=self.device)))
+            with plate_n:
+                y_hat = sample_dict["a"][..., sample_dict["pair"], :] + \
+                        sample_dict["beta"][..., 0, :].unsqueeze(-2) * sample_dict["treatment"] + \
+                        sample_dict["beta"][..., 1, :].unsqueeze(-2) * sample_dict["pre_test"]
+                sample_dict["y"] = pyro.sample("y",
+                                               dist.Normal(y_hat, 
+                                                           repeat(sample_dict["sigma_y"],
+                                                                  "b -> n b", n=sample_dict["N"])),
+                                                obs=sample_dict["y"] if "y" in sample_dict else None)
+        return sample_dict
