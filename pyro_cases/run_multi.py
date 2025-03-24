@@ -42,12 +42,9 @@ def process_task(tag, task_param_dict_list, device_count, max_processes_per_gpu)
 @click.option("--cuda-idx", type=str, help="cuda devices")
 def main(save_path, cuda_idx):
     model_num = 100
-    task_names = ["gaussian_linear"]
-    lr_schedulers = ["plain", 
-                     "custom_decrease", "exponential", "milestones",
-                     "cosine_annealing", "cyclic", "one_cycle", 
-                     "cosine_annealing_warm_restart"]
-    network_widths = [512, 1024, 2048]
+    task_names = list(vae_dict.keys())
+    lr_schedulers = ["cosine_annealing"]
+    network_widths = [1024]
     save_path = Path(save_path)
     if cuda_idx == "all":
         cuda_devices = [f"cuda:{i}" for i in range(torch.cuda.device_count())]
@@ -89,7 +86,7 @@ def main(save_path, cuda_idx):
                     "vectorize_particles": False,
                     "batch_size": 1024,
                     "network_width": network_width,
-                    "steps": 20_000,
+                    "steps": 10_000,
                     "show_progress": False,
                     "silent": True,
                 }
