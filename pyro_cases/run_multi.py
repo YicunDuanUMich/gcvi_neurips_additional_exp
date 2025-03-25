@@ -94,10 +94,14 @@ def main(save_path, cuda_idx):
     
     for t, task_param_dict_list in tasks.items():
         print_green(f"processing tag {t}")
-        t_result = process_task(t, task_param_dict_list, len(cuda_devices), max_processes_per_gpu)
-        torch.save(t_result, save_path / f"pyro_{t}_mn_{model_num}.pt")
-        del t_result
-        gc.collect()
+        save_t_file_path = save_path / f"pyro_{t}_mn_{model_num}.pt"
+        if not save_t_file_path.exists():
+            t_result = process_task(t, task_param_dict_list, len(cuda_devices), max_processes_per_gpu)
+            torch.save(t_result, save_t_file_path)
+            del t_result
+            gc.collect()
+        else:
+            print_green(f"find {save_t_file_path}")
         print_green(f"tag {t} completes")
     
     print_green("done")
