@@ -9,6 +9,7 @@ import tqdm
 import copy
 import click
 import multiprocessing
+from termcolor import colored
 
 from pathlib import Path
 
@@ -165,30 +166,47 @@ def train_and_test(task_name,
     elbo_training_loss = []
     favi_training_loss = []
     iterations = range(steps) if not show_progress else tqdm.tqdm(list(range(steps)))
+    elbo_cant_converge = False
+    favi_cant_converge = False
     for _ in iterations:
         sample_dict = vae.generate_sample_dict(batch_size=batch_size)
 
-        step_loss = svi.step(batch_size, sample_dict)
-        elbo_training_loss.append(step_loss)
+        try:
+            if not elbo_cant_converge:
+                step_loss = svi.step(batch_size, sample_dict)
+                elbo_training_loss.append(step_loss)
+        except Exception as e:
+            print(colored(f"get exception during ELBO training:\n {e}", "red"))
+            elbo_cant_converge = True
 
-        favi_optimizer.zero_grad()
-        favi_loss = favi_encoder.batch_favi_loss(vae.extract_theta(sample_dict), 
-                                                 vae.extract_x(sample_dict))
-        favi_loss = favi_loss.mean()
-        favi_loss.backward()
-        torch.nn.utils.clip_grad_norm_(favi_encoder.parameters(), max_norm=1.0)
-        favi_optimizer.step()
-        favi_scheduler.step()
-        favi_training_loss.append(favi_loss.item())
+        try:
+            if not favi_cant_converge:
+                favi_optimizer.zero_grad()
+                favi_loss = favi_encoder.batch_favi_loss(vae.extract_theta(sample_dict), 
+                                                        vae.extract_x(sample_dict))
+                favi_loss = favi_loss.mean()
+                favi_loss.backward()
+                torch.nn.utils.clip_grad_norm_(favi_encoder.parameters(), max_norm=1.0)
+                favi_optimizer.step()
+                favi_scheduler.step()
+                favi_training_loss.append(favi_loss.item())
+        except Exception as e:
+            print(colored(f"get exception during FAVI training:\n {e}", "red"))
+            favi_cant_converge = True
 
-
-    vae = vae.eval()
-    elbo_test_dict_list = [compare_ref_and_est(vae, vae.encoder, i + 10_000) 
-                           for i in range(10)]
+    if not elbo_cant_converge:
+        vae = vae.eval()
+        elbo_test_dict_list = [compare_ref_and_est(vae, vae.encoder, i + 10_000) 
+                            for i in range(10)]
+    else:
+        elbo_test_dict_list = ["elbo_cant_converge"]
     
-    favi_encoder = favi_encoder.eval()
-    favi_test_dict_list = [compare_ref_and_est(vae, favi_encoder, i + 10_000) 
-                           for i in range(10)]
+    if not favi_cant_converge:
+        favi_encoder = favi_encoder.eval()
+        favi_test_dict_list = [compare_ref_and_est(vae, favi_encoder, i + 10_000) 
+                            for i in range(10)]
+    else:
+        favi_test_dict_list = ["favi_cant_converge"]
     
     task_end_time = time.ctime()
     end_time = time.time()
