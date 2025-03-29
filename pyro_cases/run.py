@@ -20,8 +20,8 @@ from pyro.infer import SVI, Trace_ELBO
 from pyro.optim import ClippedAdam
 
 from pyro_cases.psis import psislw
-from pyro_cases.model import (BaseVAE,
-                              GaussianLinearVAE,
+from pyro_cases.base_vae import BaseVAE, BaseVAEwRegister
+from pyro_cases.model import (GaussianLinearVAE,
                               GaussianLinearUniformVAE,
                               SLCPVAE,
                               SLCPwDistractorVAE,
@@ -148,17 +148,18 @@ def train_and_test(task_name,
                    vsbc_n_obs,
                    show_progress,
                    silent=False,
-                   return_vae=False):
+                   return_vae=False,
+                   suppress_error=True):
     torch.manual_seed(seed)
     random.seed(seed)
     np.random.seed(seed)
+    pyro.clear_param_store()
 
     if task_name in vae_dict:
         vae = vae_dict[task_name]
     else:
         raise NotImplementedError()
     vae = vae(hidden_dim=network_width).to(device=device)
-    pyro.clear_param_store()
     elbo_optimizer = ClippedAdam({"lr": lr, 
                                   "clip_norm": 1.0,
                                   "lrd": 0.9997})
@@ -214,31 +215,46 @@ def train_and_test(task_name,
     iterations = range(steps) if not show_progress else tqdm.tqdm(list(range(steps)))
     elbo_cant_converge = False
     favi_cant_converge = False
+    if isinstance(vae, BaseVAEwRegister):
+        vae.do_register(batch_size)
     for _ in iterations:
         sample_dict = vae.generate_sample_dict(batch_size=batch_size)
+        if suppress_error:
+            try:
+                if not elbo_cant_converge:
+                    step_loss = svi.step(batch_size, sample_dict)
+                    elbo_training_loss.append(step_loss)
+            except Exception as e:
+                print(colored(f"get exception during ELBO training:\n {e}", "red"))
+                elbo_cant_converge = True
 
-        try:
-            if not elbo_cant_converge:
-                step_loss = svi.step(batch_size, sample_dict)
-                elbo_training_loss.append(step_loss)
-        except Exception as e:
-            print(colored(f"get exception during ELBO training:\n {e}", "red"))
-            elbo_cant_converge = True
+            try:
+                if not favi_cant_converge:
+                    favi_optimizer.zero_grad()
+                    favi_loss = favi_encoder.batch_favi_loss(vae.extract_theta(sample_dict), 
+                                                            vae.extract_x(sample_dict))
+                    favi_loss = favi_loss.mean()
+                    favi_loss.backward()
+                    torch.nn.utils.clip_grad_norm_(favi_encoder.parameters(), max_norm=1.0)
+                    favi_optimizer.step()
+                    favi_scheduler.step()
+                    favi_training_loss.append(favi_loss.item())
+            except Exception as e:
+                print(colored(f"get exception during FAVI training:\n {e}", "red"))
+                favi_cant_converge = True
+        else:
+            step_loss = svi.step(batch_size, sample_dict)
+            elbo_training_loss.append(step_loss)
 
-        try:
-            if not favi_cant_converge:
-                favi_optimizer.zero_grad()
-                favi_loss = favi_encoder.batch_favi_loss(vae.extract_theta(sample_dict), 
-                                                        vae.extract_x(sample_dict))
-                favi_loss = favi_loss.mean()
-                favi_loss.backward()
-                torch.nn.utils.clip_grad_norm_(favi_encoder.parameters(), max_norm=1.0)
-                favi_optimizer.step()
-                favi_scheduler.step()
-                favi_training_loss.append(favi_loss.item())
-        except Exception as e:
-            print(colored(f"get exception during FAVI training:\n {e}", "red"))
-            favi_cant_converge = True
+            favi_optimizer.zero_grad()
+            favi_loss = favi_encoder.batch_favi_loss(vae.extract_theta(sample_dict), 
+                                                    vae.extract_x(sample_dict))
+            favi_loss = favi_loss.mean()
+            favi_loss.backward()
+            torch.nn.utils.clip_grad_norm_(favi_encoder.parameters(), max_norm=1.0)
+            favi_optimizer.step()
+            favi_scheduler.step()
+            favi_training_loss.append(favi_loss.item())
 
     elbo_vae = vae
     favi_vae_wrap = copy.deepcopy(vae)
