@@ -9,14 +9,17 @@ import tqdm
 import copy
 import click
 import multiprocessing
-from termcolor import colored
 
+from termcolor import colored
 from pathlib import Path
+from typing import Dict
 
 import pyro
+import pyro.distributions as dist
 from pyro.infer import SVI, Trace_ELBO
 from pyro.optim import ClippedAdam
 
+from pyro_cases.psis import psislw
 from pyro_cases.model import (BaseVAE,
                               GaussianLinearVAE,
                               GaussianLinearUniformVAE,
@@ -40,9 +43,14 @@ from pyro_cases.model import (BaseVAE,
                               ARM_electric,
                               ARM_electric_1a,
                               ARM_electric_1a_chr,
-                              ARM_electric_1b)
+                              ARM_electric_1b,
+                              ARM_electric_1b_chr,
+                              ARM_electric_1c,
+                              ARM_electric_1c_chr,
+                              ARM_electric_chr,
+                              ARM_electric_inter)
 
-vae_dict = {
+vae_dict: Dict[str, BaseVAE] = {
     "gaussian_linear": GaussianLinearVAE,
     "gaussian_linear_uniform": GaussianLinearUniformVAE,
     "slcp": SLCPVAE,
@@ -66,30 +74,63 @@ vae_dict = {
     "arm_electric_1a": ARM_electric_1a,
     "arm_electric_1a_chr": ARM_electric_1a_chr,
     "arm_electric_1b": ARM_electric_1b,
+    "arm_electric_1b_chr": ARM_electric_1b_chr,
+    "arm_electric_1c": ARM_electric_1c,
+    "arm_electric_1c_chr": ARM_electric_1c_chr,
+    "arm_electric_chr": ARM_electric_chr,
+    "arm_electric_inter": ARM_electric_inter,
 }
 
 class NullScheduler:
     def step(self):
         pass
 
+INIT_SEED = 10_000
 
-def compare_ref_and_est(vae: BaseVAE, 
-                        encoder, 
-                        obs_seed):
+def get_k_hat(vae, num_obs, num_samples):
+    sample_dict_list = [vae.get_obs_sample_dict(INIT_SEED + i) for i in range(num_obs)]
+    lw = torch.zeros(num_samples, num_obs)
+    elbo = Trace_ELBO(num_particles=1)
+    for i in range(num_obs):
+        for j in range(num_samples):
+            with torch.no_grad():
+                lw[j, i] = -1 * elbo.loss(vae.model, vae.guide, 1, sample_dict_list[i])
+    return psislw(lw.numpy(), Reff=1.0)[1]  # (num_obs, )
+
+def get_single_vsbc(vae, obs_seed):
+    sample_dict = vae.get_obs_sample_dict(obs_seed)
+    x = vae.extract_x(sample_dict)
+    true_theta = vae.extract_theta(sample_dict)
+    with torch.no_grad():
+        est_theta_loc, est_theta_scale = vae.encoder(x)
+        est_theta_loc = est_theta_loc.squeeze(0)
+        est_theta_scale = est_theta_scale.squeeze(0)
+        est_dist = dist.Normal(est_theta_loc, est_theta_scale)
+        vsbc = 1 - est_dist.cdf(true_theta.squeeze(0))
+    return vsbc  # (k, )
+
+def get_vsbc(vae, num_obs):
+    vsbc_list = []
+    for i in range(num_obs):
+        vsbc_list.append(get_single_vsbc(vae, INIT_SEED + i))
+    return torch.stack(vsbc_list, dim=-1)  # (k, num_obs)
+
+def compare_single_ref_and_est(vae: BaseVAE, obs_seed):
     obs, theta = vae.get_observation(obs_seed)
     
     with torch.inference_mode():
-        mu, sigma = encoder(obs)
-        mu = mu.squeeze(0)
-        sigma = sigma.squeeze(0)
+        mu, sigma = vae.encoder(obs)
 
     return {
         "obs_seed": obs_seed,
         "obs": obs.cpu(),
-        "est_sigma2": (sigma ** 2).cpu(),
-        "est_mu": mu.cpu(),
+        "est_sigma2": (sigma ** 2).squeeze(0).cpu(),
+        "est_mu": mu.squeeze(0).cpu(),
         "true_theta": theta.squeeze(0).cpu(),
     }
+
+def compare_ref_and_est(vae, num_obs):
+    return [compare_single_ref_and_est(vae, INIT_SEED + i) for i in range(num_obs)]
 
 def train_and_test(task_name, 
                    seed, 
@@ -101,8 +142,13 @@ def train_and_test(task_name,
                    batch_size, 
                    network_width,
                    steps,
+                   direct_compare_n_obs,
+                   k_hat_n_obs, 
+                   k_hat_n_samples,
+                   vsbc_n_obs,
                    show_progress,
-                   silent=False):
+                   silent=False,
+                   return_vae=False):
     torch.manual_seed(seed)
     random.seed(seed)
     np.random.seed(seed)
@@ -194,19 +240,35 @@ def train_and_test(task_name,
             print(colored(f"get exception during FAVI training:\n {e}", "red"))
             favi_cant_converge = True
 
+    elbo_vae = vae
+    favi_vae_wrap = copy.deepcopy(vae)
+    favi_vae_wrap.encoder = favi_encoder
+
     if not elbo_cant_converge:
-        vae = vae.eval()
-        elbo_test_dict_list = [compare_ref_and_est(vae, vae.encoder, i + 10_000) 
-                            for i in range(10)]
+        elbo_vae = elbo_vae.eval()
+        # direct
+        elbo_test_dict_list = compare_ref_and_est(elbo_vae, num_obs=direct_compare_n_obs)
+        # k hat
+        elbo_k_hat = torch.from_numpy(get_k_hat(elbo_vae, num_obs=k_hat_n_obs, num_samples=k_hat_n_samples))
+        # vsbc
+        elbo_vsbc = get_vsbc(elbo_vae, num_obs=vsbc_n_obs).cpu()
     else:
-        elbo_test_dict_list = ["elbo_cant_converge"]
+        elbo_test_dict_list = "elbo_cant_converge"
+        elbo_k_hat = "elbo_cant_converge"
+        elbo_vsbc = "elbo_cant_converge"
     
     if not favi_cant_converge:
-        favi_encoder = favi_encoder.eval()
-        favi_test_dict_list = [compare_ref_and_est(vae, favi_encoder, i + 10_000) 
-                            for i in range(10)]
+        favi_vae_wrap = favi_vae_wrap.eval()
+        # direct
+        favi_test_dict_list = compare_ref_and_est(favi_vae_wrap, num_obs=direct_compare_n_obs)
+        # k hat
+        favi_k_hat = torch.from_numpy(get_k_hat(favi_vae_wrap, num_obs=k_hat_n_obs, num_samples=k_hat_n_samples))
+        # vsbc
+        favi_vsbc = get_vsbc(favi_vae_wrap, num_obs=vsbc_n_obs).cpu()
     else:
-        favi_test_dict_list = ["favi_cant_converge"]
+        favi_test_dict_list = "favi_cant_converge"
+        favi_k_hat = "favi_cant_converge"
+        favi_vsbc = "favi_cant_converge"
     
     task_end_time = time.ctime()
     end_time = time.time()
@@ -220,6 +282,12 @@ def train_and_test(task_name,
         "elbo_test_dict_list": elbo_test_dict_list,
         "favi_training_loss": favi_training_loss,
         "favi_test_dict_list": favi_test_dict_list,
+        "elbo_vae": elbo_vae.cpu() if return_vae else None,
+        "favi_vae_wrap": favi_vae_wrap.cpu() if return_vae else None,
+        "favi_k_hat": favi_k_hat,
+        "favi_vsbc": favi_vsbc,
+        "elbo_k_hat": elbo_k_hat,
+        "elbo_vsbc": elbo_vsbc,
     }
 
 
@@ -257,6 +325,10 @@ def main(task_name, model_num, network_width, lr_schedule, processes_num, cuda_i
                                     1024,
                                     network_width,
                                     20_000,
+                                    10,
+                                    30,
+                                    100,
+                                    1000,
                                     False)
                                     for i in range(model_num)])
     else:
@@ -271,6 +343,10 @@ def main(task_name, model_num, network_width, lr_schedule, processes_num, cuda_i
             batch_size=1024,
             network_width=network_width,
             steps=20_000,
+            direct_compare_n_obs=10,
+            k_hat_n_obs=30,
+            k_hat_n_samples=100,
+            vsbc_n_obs=1000,
             show_progress=False
         ) for i in range(model_num)]
     torch.save(output_list, Path(save_path) / f"pyro_{task_name}_mn_{model_num}_nw_{network_width}_lr_{lr_schedule}.pt")

@@ -87,6 +87,10 @@ def main(save_path, cuda_idx):
                     "batch_size": 1024,
                     "network_width": network_width,
                     "steps": 10_000,
+                    "direct_compare_n_obs": 10,
+                    "k_hat_n_obs": 30,
+                    "k_hat_n_samples":100,
+                    "vsbc_n_obs": 1000,
                     "show_progress": False,
                     "silent": True,
                 }
