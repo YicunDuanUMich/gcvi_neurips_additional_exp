@@ -48,7 +48,17 @@ from pyro_cases.model import (GaussianLinearVAE,
                               ARM_electric_1c,
                               ARM_electric_1c_chr,
                               ARM_electric_chr,
-                              ARM_electric_inter)
+                              ARM_electric_inter,
+                              ARM_electric_multi_preds,
+                              ARM_electric_one_pred,
+                              ARM_electric_supp,
+                              ARM_electric_tr,
+                              ARM_electric_trpre,
+                              ARM_grades,
+                              ARM_hiv_chr,
+                              ARM_hiv_inter_chr,
+                              ARM_hiv_inter,
+                              ARM_hiv)
 
 vae_dict: Dict[str, BaseVAE] = {
     "gaussian_linear": GaussianLinearVAE,
@@ -79,6 +89,16 @@ vae_dict: Dict[str, BaseVAE] = {
     "arm_electric_1c_chr": ARM_electric_1c_chr,
     "arm_electric_chr": ARM_electric_chr,
     "arm_electric_inter": ARM_electric_inter,
+    "arm_electric_multi_preds": ARM_electric_multi_preds,
+    "arm_electric_one_pred": ARM_electric_one_pred,
+    "arm_electric_supp": ARM_electric_supp,
+    "arm_electric_tr": ARM_electric_tr,
+    "arm_electric_trpre": ARM_electric_trpre,
+    "arm_grades": ARM_grades,
+    "arm_hiv_chr": ARM_hiv_chr,
+    "arm_hiv_inter_chr": ARM_hiv_inter_chr,
+    "arm_hiv_inter": ARM_hiv_inter,
+    "arm_hiv": ARM_hiv,
 }
 
 class NullScheduler:
