@@ -2561,3 +2561,553 @@ class ARM_logearn_logheight(BaseVAEwRegister):
                                                                                     "b -> n b", n=sample_dict["N"])),
                                                         obs=sample_dict.get("log_earn", None))
         return sample_dict
+
+
+class ARM_mesquite_log(BaseVAEwRegister):
+    x_dim = 351
+    theta_dim = 7
+
+    def get_plates(self, batch_size, sample_dict):
+        return {
+            "plate_batch": self.plate("plate_batch", batch_size, dim=-1),
+            "plate_n": self.plate("plate_n", sample_dict["N"], dim=-2),
+        }
+
+    def model(self, batch_size, sample_dict):
+        if sample_dict is None:
+            sample_dict = SampleDict()
+            with MetaDataContext(sample_dict, self):
+                sample_dict["N"] = 50
+            with DataContext(sample_dict, self):
+                diam1 = torch.randint(low=100, high=200,
+                                      size=(sample_dict["N"], batch_size),
+                                      device=self.device)
+                diam2 = torch.randint(low=100, high=200,
+                                      size=(sample_dict["N"], batch_size),
+                                      device=self.device)
+                canopy_height = torch.randint(low=50, high=100,
+                                      size=(sample_dict["N"], batch_size),
+                                      device=self.device)
+                total_height = canopy_height * (6 + torch.randn(sample_dict["N"], batch_size, device=self.device) * 0.1)
+                density = torch.randint(low=10, high=200,
+                                        size=(sample_dict["N"], batch_size),
+                                        device=self.device)
+                sample_dict["log_diam1"] = torch.log(diam1)
+                sample_dict["log_diam2"] = torch.log(diam2)
+                sample_dict["log_canopy_height"] = torch.log(canopy_height)
+                sample_dict["log_total_height"] = torch.log(total_height)
+                sample_dict["log_density"] = torch.log(density)
+                sample_dict["group"] = torch.randint(low=0, high=2,
+                                                    size=(sample_dict["N"], batch_size),
+                                                    device=self.device)
+                sample_dict["sigma"] = torch.ones(batch_size, device=self.device) * 0.1
+        else:
+            sample_dict = copy.copy(sample_dict)
+
+        plates = self.get_plates(batch_size, sample_dict)
+        with plates["plate_batch"]:
+            sample_dict["beta"] = self.r_sample("beta", dist.Normal(torch.zeros(batch_size, 7, device=self.device),
+                                                                    torch.ones(batch_size, 7, device=self.device) * 10.0).to_event(1))
+            with plates["plate_n"]:
+                y_hat = sample_dict["beta"][..., 0] + \
+                        sample_dict["beta"][..., 1] * sample_dict["log_diam1"] + \
+                        sample_dict["beta"][..., 2] * sample_dict["log_diam2"] + \
+                        sample_dict["beta"][..., 3] * sample_dict["log_canopy_height"] + \
+                        sample_dict["beta"][..., 4] * sample_dict["log_total_height"] + \
+                        sample_dict["beta"][..., 5] * sample_dict["log_density"] + \
+                        sample_dict["beta"][..., 6] * sample_dict["group"]
+                sample_dict["log_weight"] = self.r_obs("log_weight",
+                                                        dist.Normal(y_hat, repeat(sample_dict["sigma"],
+                                                                                    "b -> n b", n=sample_dict["N"])),
+                                                        obs=sample_dict.get("log_weight", None))
+        return sample_dict
+
+
+class ARM_mesquite_va(BaseVAEwRegister):
+    x_dim = 201
+    theta_dim = 4
+
+    def get_plates(self, batch_size, sample_dict):
+        return {
+            "plate_batch": self.plate("plate_batch", batch_size, dim=-1),
+            "plate_n": self.plate("plate_n", sample_dict["N"], dim=-2),
+        }
+
+    def model(self, batch_size, sample_dict):
+        if sample_dict is None:
+            sample_dict = SampleDict()
+            with MetaDataContext(sample_dict, self):
+                sample_dict["N"] = 50
+            with DataContext(sample_dict, self):
+                diam1 = torch.randint(low=100, high=200,
+                                      size=(sample_dict["N"], batch_size),
+                                      device=self.device)
+                diam2 = torch.randint(low=100, high=200,
+                                      size=(sample_dict["N"], batch_size),
+                                      device=self.device)
+                canopy_height = torch.randint(low=50, high=100,
+                                      size=(sample_dict["N"], batch_size),
+                                      device=self.device)
+                sample_dict["log_canopy_volume"] = torch.log(diam1 * diam2 * canopy_height)
+                sample_dict["log_canopy_area"] = torch.log(diam1 * diam2)
+                sample_dict["group"] = torch.randint(low=0, high=2,
+                                                    size=(sample_dict["N"], batch_size),
+                                                    device=self.device)
+                sample_dict["sigma"] = torch.ones(batch_size, device=self.device) * 0.1
+        else:
+            sample_dict = copy.copy(sample_dict)
+
+        plates = self.get_plates(batch_size, sample_dict)
+        with plates["plate_batch"]:
+            sample_dict["beta"] = self.r_sample("beta", dist.Normal(torch.zeros(batch_size, 4, device=self.device),
+                                                                    torch.ones(batch_size, 4, device=self.device) * 10.0).to_event(1))
+            with plates["plate_n"]:
+                y_hat = sample_dict["beta"][..., 0] + \
+                        sample_dict["beta"][..., 1] * sample_dict["log_canopy_volume"] + \
+                        sample_dict["beta"][..., 2] * sample_dict["log_canopy_area"] + \
+                        sample_dict["beta"][..., 3] * sample_dict["group"]
+                sample_dict["log_weight"] = self.r_obs("log_weight",
+                                                        dist.Normal(y_hat, repeat(sample_dict["sigma"],
+                                                                                    "b -> n b", n=sample_dict["N"])),
+                                                        obs=sample_dict.get("log_weight", None))
+        return sample_dict
+
+
+class ARM_mesquite_vas(BaseVAEwRegister):
+    x_dim = 351
+    theta_dim = 7
+
+    def get_plates(self, batch_size, sample_dict):
+        return {
+            "plate_batch": self.plate("plate_batch", batch_size, dim=-1),
+            "plate_n": self.plate("plate_n", sample_dict["N"], dim=-2),
+        }
+
+    def model(self, batch_size, sample_dict):
+        if sample_dict is None:
+            sample_dict = SampleDict()
+            with MetaDataContext(sample_dict, self):
+                sample_dict["N"] = 50
+            with DataContext(sample_dict, self):
+                diam1 = torch.randint(low=100, high=200,
+                                      size=(sample_dict["N"], batch_size),
+                                      device=self.device)
+                diam2 = torch.randint(low=100, high=200,
+                                      size=(sample_dict["N"], batch_size),
+                                      device=self.device)
+                canopy_height = torch.randint(low=50, high=100,
+                                      size=(sample_dict["N"], batch_size),
+                                      device=self.device)
+                total_height = canopy_height * (6 + torch.randn(sample_dict["N"], batch_size, device=self.device) * 0.1)
+                density = torch.randint(low=10, high=200,
+                                        size=(sample_dict["N"], batch_size),
+                                        device=self.device)
+                sample_dict["log_canopy_volume"] = torch.log(diam1 * diam2 * canopy_height)
+                sample_dict["log_canopy_area"] = torch.log(diam1 * diam2)
+                sample_dict["log_canopy_shape"] = torch.log(diam1 / diam2)
+                sample_dict["log_total_height"] = torch.log(total_height)
+                sample_dict["log_density"] = torch.log(density)
+                sample_dict["group"] = torch.randint(low=0, high=2,
+                                                    size=(sample_dict["N"], batch_size),
+                                                    device=self.device)
+                sample_dict["sigma"] = torch.ones(batch_size, device=self.device) * 0.1
+        else:
+            sample_dict = copy.copy(sample_dict)
+
+        plates = self.get_plates(batch_size, sample_dict)
+        with plates["plate_batch"]:
+            sample_dict["beta"] = self.r_sample("beta", dist.Normal(torch.zeros(batch_size, 7, device=self.device),
+                                                                    torch.ones(batch_size, 7, device=self.device) * 10.0).to_event(1))
+            with plates["plate_n"]:
+                y_hat = sample_dict["beta"][..., 0] + \
+                        sample_dict["beta"][..., 1] * sample_dict["log_canopy_volume"] + \
+                        sample_dict["beta"][..., 2] * sample_dict["log_canopy_area"] + \
+                        sample_dict["beta"][..., 3] * sample_dict["log_canopy_shape"] + \
+                        sample_dict["beta"][..., 4] * sample_dict["log_total_height"] + \
+                        sample_dict["beta"][..., 5] * sample_dict["log_density"] + \
+                        sample_dict["beta"][..., 6] * sample_dict["group"]
+                sample_dict["log_weight"] = self.r_obs("log_weight",
+                                                        dist.Normal(y_hat, repeat(sample_dict["sigma"],
+                                                                                    "b -> n b", n=sample_dict["N"])),
+                                                        obs=sample_dict.get("log_weight", None))
+        return sample_dict
+
+
+class ARM_mesquite_vash(BaseVAEwRegister):
+    x_dim = 301
+    theta_dim = 6
+
+    def get_plates(self, batch_size, sample_dict):
+        return {
+            "plate_batch": self.plate("plate_batch", batch_size, dim=-1),
+            "plate_n": self.plate("plate_n", sample_dict["N"], dim=-2),
+        }
+
+    def model(self, batch_size, sample_dict):
+        if sample_dict is None:
+            sample_dict = SampleDict()
+            with MetaDataContext(sample_dict, self):
+                sample_dict["N"] = 50
+            with DataContext(sample_dict, self):
+                diam1 = torch.randint(low=100, high=200,
+                                      size=(sample_dict["N"], batch_size),
+                                      device=self.device)
+                diam2 = torch.randint(low=100, high=200,
+                                      size=(sample_dict["N"], batch_size),
+                                      device=self.device)
+                canopy_height = torch.randint(low=50, high=100,
+                                      size=(sample_dict["N"], batch_size),
+                                      device=self.device)
+                total_height = canopy_height * (6 + torch.randn(sample_dict["N"], batch_size, device=self.device) * 0.1)
+                sample_dict["log_canopy_volume"] = torch.log(diam1 * diam2 * canopy_height)
+                sample_dict["log_canopy_area"] = torch.log(diam1 * diam2)
+                sample_dict["log_canopy_shape"] = torch.log(diam1 / diam2)
+                sample_dict["log_total_height"] = torch.log(total_height)
+                sample_dict["group"] = torch.randint(low=0, high=2,
+                                                    size=(sample_dict["N"], batch_size),
+                                                    device=self.device)
+                sample_dict["sigma"] = torch.ones(batch_size, device=self.device) * 0.1
+        else:
+            sample_dict = copy.copy(sample_dict)
+
+        plates = self.get_plates(batch_size, sample_dict)
+        with plates["plate_batch"]:
+            sample_dict["beta"] = self.r_sample("beta", dist.Normal(torch.zeros(batch_size, 6, device=self.device),
+                                                                    torch.ones(batch_size, 6, device=self.device) * 10.0).to_event(1))
+            with plates["plate_n"]:
+                y_hat = sample_dict["beta"][..., 0] + \
+                        sample_dict["beta"][..., 1] * sample_dict["log_canopy_volume"] + \
+                        sample_dict["beta"][..., 2] * sample_dict["log_canopy_area"] + \
+                        sample_dict["beta"][..., 3] * sample_dict["log_canopy_shape"] + \
+                        sample_dict["beta"][..., 4] * sample_dict["log_total_height"] + \
+                        sample_dict["beta"][..., 5] * sample_dict["group"]
+                sample_dict["log_weight"] = self.r_obs("log_weight",
+                                                        dist.Normal(y_hat, repeat(sample_dict["sigma"],
+                                                                                    "b -> n b", n=sample_dict["N"])),
+                                                        obs=sample_dict.get("log_weight", None))
+        return sample_dict
+
+
+class ARM_mesquite_volume(BaseVAEwRegister):
+    x_dim = 101
+    theta_dim = 2
+
+    def get_plates(self, batch_size, sample_dict):
+        return {
+            "plate_batch": self.plate("plate_batch", batch_size, dim=-1),
+            "plate_n": self.plate("plate_n", sample_dict["N"], dim=-2),
+        }
+
+    def model(self, batch_size, sample_dict):
+        if sample_dict is None:
+            sample_dict = SampleDict()
+            with MetaDataContext(sample_dict, self):
+                sample_dict["N"] = 50
+            with DataContext(sample_dict, self):
+                diam1 = torch.randint(low=100, high=200,
+                                      size=(sample_dict["N"], batch_size),
+                                      device=self.device)
+                diam2 = torch.randint(low=100, high=200,
+                                      size=(sample_dict["N"], batch_size),
+                                      device=self.device)
+                canopy_height = torch.randint(low=50, high=100,
+                                      size=(sample_dict["N"], batch_size),
+                                      device=self.device)
+                sample_dict["log_canopy_volume"] = torch.log(diam1 * diam2 * canopy_height)
+                sample_dict["sigma"] = torch.ones(batch_size, device=self.device) * 0.1
+        else:
+            sample_dict = copy.copy(sample_dict)
+
+        plates = self.get_plates(batch_size, sample_dict)
+        with plates["plate_batch"]:
+            sample_dict["beta"] = self.r_sample("beta", dist.Normal(torch.zeros(batch_size, 2, device=self.device),
+                                                                    torch.ones(batch_size, 2, device=self.device) * 10.0).to_event(1))
+            with plates["plate_n"]:
+                y_hat = sample_dict["beta"][..., 0] + \
+                        sample_dict["beta"][..., 1] * sample_dict["log_canopy_volume"]
+                sample_dict["log_weight"] = self.r_obs("log_weight",
+                                                        dist.Normal(y_hat, repeat(sample_dict["sigma"],
+                                                                                    "b -> n b", n=sample_dict["N"])),
+                                                        obs=sample_dict.get("log_weight", None))
+        return sample_dict
+
+
+class ARM_mesquite(BaseVAEwRegister):
+    x_dim = 351
+    theta_dim = 7
+
+    def get_plates(self, batch_size, sample_dict):
+        return {
+            "plate_batch": self.plate("plate_batch", batch_size, dim=-1),
+            "plate_n": self.plate("plate_n", sample_dict["N"], dim=-2),
+        }
+
+    def model(self, batch_size, sample_dict):
+        if sample_dict is None:
+            sample_dict = SampleDict()
+            with MetaDataContext(sample_dict, self):
+                sample_dict["N"] = 50
+            with DataContext(sample_dict, self):
+                sample_dict["diam1"] = torch.randint(low=100, high=200,
+                                                    size=(sample_dict["N"], batch_size),
+                                                    device=self.device)
+                sample_dict["diam2"] = torch.randint(low=100, high=200,
+                                                    size=(sample_dict["N"], batch_size),
+                                                    device=self.device)
+                sample_dict["canopy_height"] = torch.randint(low=50, high=100,
+                                                            size=(sample_dict["N"], batch_size),
+                                                            device=self.device)
+                sample_dict["total_height"] = sample_dict["canopy_height"] * (6 + torch.randn(sample_dict["N"], batch_size, device=self.device) * 0.1)
+                sample_dict["density"] = torch.randint(low=10, high=200,
+                                                        size=(sample_dict["N"], batch_size),
+                                                        device=self.device)
+                sample_dict["group"] = torch.randint(low=0, high=2,
+                                                    size=(sample_dict["N"], batch_size),
+                                                    device=self.device)
+                sample_dict["sigma"] = torch.ones(batch_size, device=self.device) * 0.1
+        else:
+            sample_dict = copy.copy(sample_dict)
+
+        plates = self.get_plates(batch_size, sample_dict)
+        with plates["plate_batch"]:
+            sample_dict["beta"] = self.r_sample("beta", dist.Normal(torch.zeros(batch_size, 7, device=self.device),
+                                                                    torch.ones(batch_size, 7, device=self.device) * 10.0).to_event(1))
+            with plates["plate_n"]:
+                y_hat = sample_dict["beta"][..., 0] + \
+                        sample_dict["beta"][..., 1] * sample_dict["diam1"] + \
+                        sample_dict["beta"][..., 2] * sample_dict["diam2"] + \
+                        sample_dict["beta"][..., 3] * sample_dict["canopy_height"] + \
+                        sample_dict["beta"][..., 4] * sample_dict["total_height"] + \
+                        sample_dict["beta"][..., 5] * sample_dict["density"] + \
+                        sample_dict["beta"][..., 6] * sample_dict["group"]
+                sample_dict["weight"] = self.r_obs("weight",
+                                                    dist.Normal(y_hat, repeat(sample_dict["sigma"],
+                                                                                "b -> n b", n=sample_dict["N"])),
+                                                    obs=sample_dict.get("weight", None))
+        return sample_dict
+
+
+class ARM_multilevel_logistic(ARM_latent_glm):
+    pass
+
+
+class ARM_pilots_ch13(BaseVAEwRegister):
+    x_dim = 75
+    theta_dim = 9
+
+    def get_plates(self, batch_size, sample_dict):
+        return {
+            "plate_batch": self.plate("plate_batch", batch_size, dim=-1),
+            "plate_n": self.plate("plate_n", sample_dict["N"], dim=-2),
+            "plate_group": self.plate("plate_group", sample_dict["n_groups"], dim=-2),
+            "plate_scenario": self.plate("plate_scenario", sample_dict["n_scenario"], dim=-2)
+        }
+
+    def model(self, batch_size, sample_dict):
+        if sample_dict is None:
+            sample_dict = SampleDict()
+            with MetaDataContext(sample_dict, self):
+                sample_dict["N"] = 75
+                sample_dict["n_groups"] = 3
+                sample_dict["n_scenarios"] = 5
+                total_permutate = sample_dict["n_groups"] * sample_dict["n_scenarios"]
+                assert sample_dict["N"] % total_permutate == 0
+                group_scenario_mesh = torch.stack(
+                    torch.meshgrid(
+                        torch.arange(sample_dict["n_groups"], device=self.device),
+                        torch.arange(sample_dict["n_scenarios"], device=self.device),
+                        indexing="ij"
+                    ), 
+                dim=-1)  # (3, 5, 2)
+                r = sample_dict["N"] // total_permutate
+                sample_dict["group_id"] = repeat(group_scenario_mesh[..., 0].reshape(-1),
+                                                 "k -> (r k)", r=r)
+                sample_dict["scenario_id"] = repeat(group_scenario_mesh[..., 1].reshape(-1),
+                                                    "k -> (r k)", r=r)
+            with DataContext(sample_dict, self):
+                pass
+        else:
+            sample_dict = copy.copy(sample_dict)
+
+        plates = self.get_plates(batch_size, sample_dict)
+        with plates["plate_batch"]:
+            sample_dict["mu"] = self.r_sample("mu", dist.Uniform(torch.tensor(-100, device=self.device), 
+                                                                 torch.tensor(100, device=self.device)))
+            with plates["plate_group"]:
+                sample_dict["gamma"] = self.r_sample("gamma", self.scalar_normal_dist(0.0, 100.0))
+            with plates["plate_scenario"]:
+                sample_dict["delta"] = self.r_sample("delta", self.scalar_normal_dist(0.0, 100.0))
+            with plates["plate_n"]:
+                y_hat = sample_dict["mu"] + \
+                        sample_dict["gamma"][..., sample_dict["group_id"], :] + \
+                        sample_dict["delta"][..., sample_dict["scenario_id"], :]
+                sample_dict["y"] = self.r_obs("y",
+                                              dist.Normal(y_hat, torch.ones_like(y_hat) * 0.1),
+                                              obs=sample_dict.get("y", None))
+        return sample_dict
+
+
+class ARM_pilots_ch14(BaseVAEwRegister):
+    x_dim = 75
+    theta_dim = 10
+
+    def get_plates(self, batch_size, sample_dict):
+        return {
+            "plate_batch": self.plate("plate_batch", batch_size, dim=-1),
+            "plate_n": self.plate("plate_n", sample_dict["N"], dim=-2),
+            "plate_group": self.plate("plate_group", sample_dict["n_groups"], dim=-2),
+            "plate_scenario": self.plate("plate_scenario", sample_dict["n_scenario"], dim=-2)
+        }
+
+    def model(self, batch_size, sample_dict):
+        if sample_dict is None:
+            sample_dict = SampleDict()
+            with MetaDataContext(sample_dict, self):
+                sample_dict["N"] = 75
+                sample_dict["n_groups"] = 3
+                sample_dict["n_scenarios"] = 5
+                total_permutate = sample_dict["n_groups"] * sample_dict["n_scenarios"]
+                assert sample_dict["N"] % total_permutate == 0
+                group_scenario_mesh = torch.stack(
+                    torch.meshgrid(
+                        torch.arange(sample_dict["n_groups"], device=self.device),
+                        torch.arange(sample_dict["n_scenarios"], device=self.device),
+                        indexing="ij"
+                    ), 
+                dim=-1)  # (3, 5, 2)
+                r = sample_dict["N"] // total_permutate
+                sample_dict["group_id"] = repeat(group_scenario_mesh[..., 0].reshape(-1),
+                                                 "k -> (r k)", r=r)
+                sample_dict["scenario_id"] = repeat(group_scenario_mesh[..., 1].reshape(-1),
+                                                    "k -> (r k)", r=r)
+            with DataContext(sample_dict, self):
+                pass
+        else:
+            sample_dict = copy.copy(sample_dict)
+
+        plates = self.get_plates(batch_size, sample_dict)
+        with plates["plate_batch"]:
+            sample_dict["mu_a"] = self.r_sample("mu_a", self.scalar_normal_dist(0.0, 1.0))
+            sample_dict["mu_b"] = self.r_sample("mu_b", self.scalar_normal_dist(0.0, 1.0))
+            with plates["plate_group"]:
+                sample_dict["a"] = self.r_sample("a", dist.Normal(10 * sample_dict["mu_a"],
+                                                                  torch.ones_like(sample_dict["mu_a"]) * 10))
+            with plates["plate_scenario"]:
+                sample_dict["b"] = self.r_sample("b", dist.Normal(10 * sample_dict["mu_b"],
+                                                                  torch.ones_like(sample_dict["mu_b"]) * 10))
+            with plates["plate_n"]:
+                y_hat = sample_dict["a"][..., sample_dict["group_id"], :] + \
+                        sample_dict["b"][..., sample_dict["scenario_id"], :]
+                sample_dict["y"] = self.r_obs("y",
+                                              dist.Normal(y_hat, torch.ones_like(y_hat) * 0.1),
+                                              obs=sample_dict.get("y", None))
+        return sample_dict
+
+
+class ARM_pilots_chr_ch13(BaseVAEwRegister):
+    x_dim = 75
+    theta_dim = 10
+
+    def get_plates(self, batch_size, sample_dict):
+        return {
+            "plate_batch": self.plate("plate_batch", batch_size, dim=-1),
+            "plate_n": self.plate("plate_n", sample_dict["N"], dim=-2),
+            "plate_group": self.plate("plate_group", sample_dict["n_groups"], dim=-2),
+            "plate_scenario": self.plate("plate_scenario", sample_dict["n_scenario"], dim=-2)
+        }
+
+    def model(self, batch_size, sample_dict):
+        if sample_dict is None:
+            sample_dict = SampleDict()
+            with MetaDataContext(sample_dict, self):
+                sample_dict["N"] = 75
+                sample_dict["n_groups"] = 3
+                sample_dict["n_scenarios"] = 5
+                total_permutate = sample_dict["n_groups"] * sample_dict["n_scenarios"]
+                assert sample_dict["N"] % total_permutate == 0
+                group_scenario_mesh = torch.stack(
+                    torch.meshgrid(
+                        torch.arange(sample_dict["n_groups"], device=self.device),
+                        torch.arange(sample_dict["n_scenarios"], device=self.device),
+                        indexing="ij"
+                    ), 
+                dim=-1)  # (3, 5, 2)
+                r = sample_dict["N"] // total_permutate
+                sample_dict["group_id"] = repeat(group_scenario_mesh[..., 0].reshape(-1),
+                                                 "k -> (r k)", r=r)
+                sample_dict["scenario_id"] = repeat(group_scenario_mesh[..., 1].reshape(-1),
+                                                    "k -> (r k)", r=r)
+            with DataContext(sample_dict, self):
+                pass
+        else:
+            sample_dict = copy.copy(sample_dict)
+
+        plates = self.get_plates(batch_size, sample_dict)
+        with plates["plate_batch"]:
+            sample_dict["mu_a"] = self.r_sample("mu_a", self.scalar_normal_dist(0.0, 1.0))
+            sample_dict["mu_b"] = self.r_sample("mu_b", self.scalar_normal_dist(0.0, 1.0))
+            
+            with plates["plate_n"]:
+                a = 0.1 * sample_dict["mu_a"] + rearrange(sample_dict["eta_a"], "b k -> k b") * 0.05
+                b = 0.1 * sample_dict["mu_b"] + rearrange(sample_dict["eta_b"], "b k -> k b") * 0.05
+                y_hat = a[..., sample_dict["group_id"], :] + \
+                        b[..., sample_dict["scenario_id"], :]
+                sample_dict["y"] = self.r_obs("y",
+                                              dist.Normal(y_hat, torch.ones_like(y_hat) * 0.1),
+                                              obs=sample_dict.get("y", None))
+        return sample_dict
+
+
+class ARM_pilots_chr_ch14(BaseVAEwRegister):
+    x_dim = 75
+    theta_dim = 10
+
+    def get_plates(self, batch_size, sample_dict):
+        return {
+            "plate_batch": self.plate("plate_batch", batch_size, dim=-1),
+            "plate_n": self.plate("plate_n", sample_dict["N"], dim=-2),
+        }
+
+    def model(self, batch_size, sample_dict):
+        if sample_dict is None:
+            sample_dict = SampleDict()
+            with MetaDataContext(sample_dict, self):
+                sample_dict["N"] = 75
+                sample_dict["n_groups"] = 3
+                sample_dict["n_scenarios"] = 5
+                total_permutate = sample_dict["n_groups"] * sample_dict["n_scenarios"]
+                assert sample_dict["N"] % total_permutate == 0
+                group_scenario_mesh = torch.stack(
+                    torch.meshgrid(
+                        torch.arange(sample_dict["n_groups"], device=self.device),
+                        torch.arange(sample_dict["n_scenarios"], device=self.device),
+                        indexing="ij"
+                    ), 
+                dim=-1)  # (3, 5, 2)
+                r = sample_dict["N"] // total_permutate
+                sample_dict["group_id"] = repeat(group_scenario_mesh[..., 0].reshape(-1),
+                                                 "k -> (r k)", r=r)
+                sample_dict["scenario_id"] = repeat(group_scenario_mesh[..., 1].reshape(-1),
+                                                    "k -> (r k)", r=r)
+            with DataContext(sample_dict, self):
+                pass
+        else:
+            sample_dict = copy.copy(sample_dict)
+
+        plates = self.get_plates(batch_size, sample_dict)
+        with plates["plate_batch"]:
+            sample_dict["mu_a"] = self.r_sample("mu_a", self.scalar_normal_dist(0.0, 1.0))
+            sample_dict["mu_b"] = self.r_sample("mu_b", self.scalar_normal_dist(0.0, 1.0))
+            with plates["plate_group"]:
+                sample_dict["eta_a"] = self.r_sample("eta_a", self.scalar_normal_dist(0.0, 1.0))
+            with plates["plate_scenario"]:
+                sample_dict["eta_b"] = self.r_sample("eta_b", self.scalar_normal_dist(0.0, 1.0))
+            a = 10 * sample_dict["mu_a"] + sample_dict["eta_a"] * 3
+            b = 10 * sample_dict["mu_b"] + sample_dict["eta_b"] * 3
+            with plates["plate_n"]:
+                y_hat = a[..., sample_dict["group_id"], :] + \
+                        b[..., sample_dict["scenario_id"], :]
+                sample_dict["y"] = self.r_obs("y",
+                                              dist.Normal(y_hat, torch.ones_like(y_hat) * 0.1),
+                                              obs=sample_dict.get("y", None))
+        return sample_dict

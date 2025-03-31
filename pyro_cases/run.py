@@ -75,7 +75,18 @@ from pyro_cases.model import (GaussianLinearVAE,
                               ARM_logearn_height,
                               ARM_logearn_interaction_z,
                               ARM_logearn_interaction,
-                              ARM_logearn_logheight)
+                              ARM_logearn_logheight,
+                              ARM_mesquite_log,
+                              ARM_mesquite_va,
+                              ARM_mesquite_vas,
+                              ARM_mesquite_vash,
+                              ARM_mesquite_volume,
+                              ARM_mesquite,
+                              ARM_multilevel_logistic,
+                              ARM_pilots_ch13,
+                              ARM_pilots_ch14,
+                              ARM_pilots_chr_ch13,
+                              ARM_pilots_chr_ch14)
 
 vae_dict: Dict[str, BaseVAE] = {
     "gaussian_linear": GaussianLinearVAE,
@@ -133,6 +144,17 @@ vae_dict: Dict[str, BaseVAE] = {
     "arm_logearn_interaction_z": ARM_logearn_interaction_z,
     "arm_logearn_interaction": ARM_logearn_interaction,
     "arm_logearn_logheight": ARM_logearn_logheight,
+    "arm_mesquite_log": ARM_mesquite_log,
+    "arm_mesquite_va": ARM_mesquite_va,
+    "arm_mesquite_vas": ARM_mesquite_vas,
+    "arm_mesquite_vash": ARM_mesquite_vash,
+    "arm_mesquite_volume": ARM_mesquite_volume,
+    "arm_mesquite": ARM_mesquite,
+    "arm_multilevel_logistic": ARM_multilevel_logistic,
+    "arm_pilots_ch13": ARM_pilots_ch13,
+    "arm_pilots_ch14": ARM_pilots_ch14,
+    "arm_pilots_chr_ch13": ARM_pilots_chr_ch13,
+    "arm_pilots_chr_ch14": ARM_pilots_chr_ch14,
 }
 
 class NullScheduler:
