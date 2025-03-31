@@ -303,50 +303,63 @@ class BaseVAEwRegister(BaseVAE):
     
 
 class SampleDict(UserDict):
-    def __init__(self, vae: BaseVAEwRegister):
+    def __init__(self):
         super().__init__()
-        self.vae = vae
-        assert isinstance(self.vae, BaseVAEwRegister)
+        self.vae = None
         self.context_flag = "no_context"
 
     def __setitem__(self, key, item):
         match self.context_flag:
             case "meta_data":
+                assert self.vae is not None
                 self.vae.r_meta_data(key, item)
             case "data":
+                assert self.vae is not None
                 self.vae.r_data(key, item)
             case "no_context":
-                pass
+                assert self.vae is None
             case _:
                 raise ValueError("context flag is invalid")
         return super().__setitem__(key, item)
     
 
 class MetaDataContext:
-    def __init__(self, sample_dict: SampleDict):
+    def __init__(self, sample_dict: SampleDict, vae: BaseVAEwRegister):
         self.sample_dict = sample_dict
         assert isinstance(self.sample_dict, SampleDict)
+        self.vae = vae
+        assert isinstance(self.vae, BaseVAEwRegister)
 
     def __enter__(self):
         assert self.sample_dict.context_flag == "no_context"
+        assert self.sample_dict.vae is None
         self.sample_dict.context_flag = "meta_data"
+        self.sample_dict.vae = self.vae
         return self.sample_dict
     
     def __exit__(self, exc_type, exc_val, traceback):
         assert self.sample_dict.context_flag == "meta_data"
+        assert self.sample_dict.vae is not None
         self.sample_dict.context_flag = "no_context"
+        self.sample_dict.vae = None
 
 
 class DataContext:
-    def __init__(self, sample_dict: SampleDict):
+    def __init__(self, sample_dict: SampleDict, vae: BaseVAEwRegister):
         self.sample_dict = sample_dict
         assert isinstance(self.sample_dict, SampleDict)
+        self.vae = vae
+        assert isinstance(self.vae, BaseVAEwRegister)
 
     def __enter__(self):
         assert self.sample_dict.context_flag == "no_context"
+        assert self.sample_dict.vae is None
         self.sample_dict.context_flag = "data"
+        self.sample_dict.vae = self.vae
         return self.sample_dict
     
     def __exit__(self, exc_type, exc_val, traceback):
         assert self.sample_dict.context_flag == "data"
+        assert self.sample_dict.vae is not None
         self.sample_dict.context_flag = "no_context"
+        self.sample_dict.vae = None
