@@ -3012,8 +3012,6 @@ class ARM_pilots_chr_ch13(BaseVAEwRegister):
         return {
             "plate_batch": self.plate("plate_batch", batch_size, dim=-1),
             "plate_n": self.plate("plate_n", sample_dict["N"], dim=-2),
-            "plate_group": self.plate("plate_group", sample_dict["n_groups"], dim=-2),
-            "plate_scenario": self.plate("plate_scenario", sample_dict["n_scenario"], dim=-2)
         }
 
     def model(self, batch_size, sample_dict):
@@ -3066,6 +3064,8 @@ class ARM_pilots_chr_ch14(BaseVAEwRegister):
         return {
             "plate_batch": self.plate("plate_batch", batch_size, dim=-1),
             "plate_n": self.plate("plate_n", sample_dict["N"], dim=-2),
+            "plate_group": self.plate("plate_group", sample_dict["n_groups"], dim=-2),
+            "plate_scenario": self.plate("plate_scenario", sample_dict["n_scenario"], dim=-2)
         }
 
     def model(self, batch_size, sample_dict):
