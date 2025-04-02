@@ -3111,3 +3111,1776 @@ class ARM_pilots_chr_ch14(BaseVAEwRegister):
                                               dist.Normal(y_hat, torch.ones_like(y_hat) * 0.1),
                                               obs=sample_dict.get("y", None))
         return sample_dict
+
+
+class ARM_radon_chr(BaseVAEwRegister):
+    x_dim = 50
+    theta_dim = 6
+
+    def get_plates(self, batch_size, sample_dict):
+        return {
+            "plate_batch": self.plate("plate_batch", batch_size, dim=-1),
+            "plate_n": self.plate("plate_n", sample_dict["N"], dim=-2),
+            "plate_county": self.plate("plate_county", sample_dict["n_county"], dim=-2)
+        }
+
+    def model(self, batch_size, sample_dict):
+        if sample_dict is None:
+            sample_dict = SampleDict()
+            with MetaDataContext(sample_dict, self):
+                sample_dict["N"] = 50
+                sample_dict["n_county"] = 5
+                assert sample_dict["N"] % sample_dict["n_county"] == 0
+                r = sample_dict["N"] // sample_dict["n_county"]
+                sample_dict["county"] = repeat(torch.arange(sample_dict["n_county"], device=self.device),
+                                                 "k -> (r k)", r=r)
+            with DataContext(sample_dict, self):
+                pass
+        else:
+            sample_dict = copy.copy(sample_dict)
+
+        plates = self.get_plates(batch_size, sample_dict)
+        with plates["plate_batch"]:
+            sample_dict["mu_eta"] = self.r_sample("mu_eta", self.scalar_normal_dist(0.0, 1.0))
+            with plates["plate_county"]:
+                sample_dict["et"] = self.r_sample("et", self.scalar_normal_dist(0.0, 1.0))
+                eta = 0.1 * sample_dict["mu_eta"] + 0.05 * sample_dict["et"]
+            with plates["plate_n"]:
+                y_hat = eta[..., sample_dict["county"], :]
+                sample_dict["y"] = self.r_obs("y",
+                                              dist.Normal(y_hat, torch.ones_like(y_hat) * 0.1),
+                                              obs=sample_dict.get("y", None))
+        return sample_dict
+
+
+class ARM_radon_complete_pool(BaseVAEwRegister):
+    x_dim = 100
+    theta_dim = 2
+
+    def get_plates(self, batch_size, sample_dict):
+        return {
+            "plate_batch": self.plate("plate_batch", batch_size, dim=-1),
+            "plate_n": self.plate("plate_n", sample_dict["N"], dim=-2),
+        }
+
+    def model(self, batch_size, sample_dict):
+        if sample_dict is None:
+            sample_dict = SampleDict()
+            with MetaDataContext(sample_dict, self):
+                sample_dict["N"] = 50
+            with DataContext(sample_dict, self):
+                sample_dict["x"] = torch.randn(sample_dict["N"], batch_size, device=self.device) * 3 + 10 
+        else:
+            sample_dict = copy.copy(sample_dict)
+
+        plates = self.get_plates(batch_size, sample_dict)
+        with plates["plate_batch"]:
+            sample_dict["beta"] = self.r_sample("beta", dist.Normal(torch.zeros((2, ), device=self.device),
+                                                                    torch.ones((2, ), device=self.device) * 0.2).to_event(1))
+            with plates["plate_n"]:
+                y_hat = sample_dict["beta"][..., 0] + sample_dict["beta"][..., 1] * sample_dict["x"]
+                sample_dict["y"] = self.r_obs("y",
+                                              dist.Normal(y_hat, torch.ones_like(y_hat) * 0.1),
+                                              obs=sample_dict.get("y", None))
+        return sample_dict
+
+
+class ARM_radon_group_chr(BaseVAEwRegister):
+    x_dim = 150
+    theta_dim = 12
+
+    def get_plates(self, batch_size, sample_dict):
+        return {
+            "plate_batch": self.plate("plate_batch", batch_size, dim=-1),
+            "plate_n": self.plate("plate_n", sample_dict["N"], dim=-2),
+            "plate_county": self.plate("plate_county", sample_dict["n_county"], dim=-2),
+            "plate_beta": self.plate("plate_beta", 2, dim=-2)
+        }
+
+    def model(self, batch_size, sample_dict):
+        if sample_dict is None:
+            sample_dict = SampleDict()
+            with MetaDataContext(sample_dict, self):
+                sample_dict["N"] = 50
+                sample_dict["n_county"] = 5
+                assert sample_dict["N"] % sample_dict["n_county"] == 0
+                r = sample_dict["N"] // sample_dict["n_county"]
+                sample_dict["county"] = repeat(torch.arange(sample_dict["n_county"], device=self.device),
+                                                 "k -> (r k)", r=r)
+            with DataContext(sample_dict, self):
+                sample_dict["x"] = torch.randn(sample_dict["N"], batch_size, device=self.device) * 3 + 10 
+                sample_dict["u"] = torch.randn(sample_dict["N"], batch_size, device=self.device) * 10 + 100
+        else:
+            sample_dict = copy.copy(sample_dict)
+
+        plates = self.get_plates(batch_size, sample_dict)
+        with plates["plate_batch"]:
+            with plates["plate_county"]:
+                sample_dict["mu_b"] = self.r_sample("mu_b", self.scalar_normal_dist(0.0, 1.0))
+                sample_dict["eta"] = self.r_sample("eta", self.scalar_normal_dist(0.0, 1.0))
+            b = sample_dict["mu_b"] + 0.5 * sample_dict["eta"]
+            with plates["plate_beta"]:
+                sample_dict["beta"] = self.r_sample("beta", self.scalar_normal_dist(0.0, 100.0))
+            with plates["plate_n"]:
+                y_hat = b[..., sample_dict["county"], :] + \
+                        sample_dict["x"] * sample_dict["beta"][..., 0, :] + \
+                        sample_dict["u"] * sample_dict["beta"][..., 1, :]
+                sample_dict["y"] = self.r_obs("y",
+                                              dist.Normal(y_hat, torch.ones_like(y_hat) * 0.1),
+                                              obs=sample_dict.get("y", None))
+        return sample_dict
+
+
+class ARM_radon_group(BaseVAEwRegister):
+    x_dim = 150
+    theta_dim = 9
+
+    def get_plates(self, batch_size, sample_dict):
+        return {
+            "plate_batch": self.plate("plate_batch", batch_size, dim=-1),
+            "plate_n": self.plate("plate_n", sample_dict["N"], dim=-2),
+            "plate_county": self.plate("plate_county", sample_dict["n_county"], dim=-2),
+            "plate_beta": self.plate("plate_beta", 2, dim=-2)
+        }
+
+    def model(self, batch_size, sample_dict):
+        if sample_dict is None:
+            sample_dict = SampleDict()
+            with MetaDataContext(sample_dict, self):
+                sample_dict["N"] = 50
+                sample_dict["n_county"] = 5
+                assert sample_dict["N"] % sample_dict["n_county"] == 0
+                r = sample_dict["N"] // sample_dict["n_county"]
+                sample_dict["county"] = repeat(torch.arange(sample_dict["n_county"], device=self.device),
+                                                 "k -> (r k)", r=r)
+            with DataContext(sample_dict, self):
+                sample_dict["x"] = torch.randn(sample_dict["N"], batch_size, device=self.device) * 3 + 10 
+                sample_dict["u"] = torch.randn(sample_dict["N"], batch_size, device=self.device) * 10 + 100
+        else:
+            sample_dict = copy.copy(sample_dict)
+
+        plates = self.get_plates(batch_size, sample_dict)
+        with plates["plate_batch"]:
+            sample_dict["mu_alpha"] = self.r_sample("mu_alpha", self.scalar_normal_dist(0.0, 1.0))
+            sample_dict["mu_beta"] = self.r_sample("mu_beta", self.scalar_normal_dist(0.0, 1.0))
+            with plates["plate_county"]:
+                sample_dict["alpha"] = self.r_sample("alpha", dist.Normal(sample_dict["mu_alpha"],
+                                                                          torch.ones_like(sample_dict["mu_alpha"]) * 0.5))
+            with plates["plate_beta"]:
+                sample_dict["beta"] = self.r_sample("beta", dist.Normal(sample_dict["mu_beta"],
+                                                                        torch.ones_like(sample_dict["mu_beta"]) * 0.5))
+            with plates["plate_n"]:
+                y_hat = sample_dict["alpha"][..., sample_dict["county"], :] + \
+                        sample_dict["x"] * sample_dict["beta"][..., 0, :] + \
+                        sample_dict["u"] * sample_dict["beta"][..., 1, :]
+                sample_dict["y"] = self.r_obs("y",
+                                              dist.Normal(y_hat, torch.ones_like(y_hat) * 0.1),
+                                              obs=sample_dict.get("y", None))
+        return sample_dict
+
+
+class ARM_radon_inter_vary_chr(BaseVAEwRegister):
+    x_dim = 200
+    theta_dim = 14
+
+    def get_plates(self, batch_size, sample_dict):
+        return {
+            "plate_batch": self.plate("plate_batch", batch_size, dim=-1),
+            "plate_n": self.plate("plate_n", sample_dict["N"], dim=-2),
+            "plate_county": self.plate("plate_county", sample_dict["n_county"], dim=-2),
+            "plate_beta": self.plate("plate_beta", 2, dim=-2)
+        }
+
+    def model(self, batch_size, sample_dict):
+        if sample_dict is None:
+            sample_dict = SampleDict()
+            with MetaDataContext(sample_dict, self):
+                sample_dict["N"] = 50
+                sample_dict["n_county"] = 5
+                assert sample_dict["N"] % sample_dict["n_county"] == 0
+                r = sample_dict["N"] // sample_dict["n_county"]
+                sample_dict["county"] = repeat(torch.arange(sample_dict["n_county"], device=self.device),
+                                                 "k -> (r k)", r=r)
+            with DataContext(sample_dict, self):
+                sample_dict["x"] = torch.randn(sample_dict["N"], batch_size, device=self.device) * 3 + 10 
+                sample_dict["u"] = torch.randn(sample_dict["N"], batch_size, device=self.device) * 10 + 100
+                sample_dict["inter"] = sample_dict["x"] * sample_dict["u"]
+        else:
+            sample_dict = copy.copy(sample_dict)
+
+        plates = self.get_plates(batch_size, sample_dict)
+        with plates["plate_batch"]:
+            with plates["plate_beta"]:
+                sample_dict["beta"] = self.r_sample("beta", self.scalar_normal_dist(0.0, 100.0))
+            sample_dict["mu_a1"] = self.r_sample("mu_a1", self.scalar_normal_dist(0.0, 1.0))
+            sample_dict["mu_a2"] = self.r_sample("mu_a2", self.scalar_normal_dist(0.0, 1.0))
+            with plates["plate_county"]:
+                sample_dict["eta1"] = self.r_sample("eta1", self.scalar_normal_dist(0.0, 1.0))
+                sample_dict["eta2"] = self.r_sample("eta2", self.scalar_normal_dist(0.0, 1.0))
+            a1 = sample_dict["mu_a1"] + 0.5 * sample_dict["eta1"]
+            a2 = 0.1 * sample_dict["mu_a2"] + 0.05 * sample_dict["eta2"]
+            with plates["plate_n"]:
+                y_hat = a1[..., sample_dict["county"], :] + \
+                        a2[..., sample_dict["county"], :] * sample_dict["x"] + \
+                        sample_dict["u"] * sample_dict["beta"][..., 0, :] + \
+                        sample_dict["inter"] * sample_dict["beta"][..., 1, :]
+                sample_dict["y"] = self.r_obs("y",
+                                              dist.Normal(y_hat, torch.ones_like(y_hat) * 0.1),
+                                              obs=sample_dict.get("y", None))
+        return sample_dict
+
+
+class ARM_radon_inter_vary(BaseVAEwRegister):
+    x_dim = 200
+    theta_dim = 14
+
+    def get_plates(self, batch_size, sample_dict):
+        return {
+            "plate_batch": self.plate("plate_batch", batch_size, dim=-1),
+            "plate_n": self.plate("plate_n", sample_dict["N"], dim=-2),
+            "plate_county": self.plate("plate_county", sample_dict["n_county"], dim=-2),
+            "plate_beta": self.plate("plate_beta", 2, dim=-2)
+        }
+
+    def model(self, batch_size, sample_dict):
+        if sample_dict is None:
+            sample_dict = SampleDict()
+            with MetaDataContext(sample_dict, self):
+                sample_dict["N"] = 50
+                sample_dict["n_county"] = 5
+                assert sample_dict["N"] % sample_dict["n_county"] == 0
+                r = sample_dict["N"] // sample_dict["n_county"]
+                sample_dict["county"] = repeat(torch.arange(sample_dict["n_county"], device=self.device),
+                                                 "k -> (r k)", r=r)
+            with DataContext(sample_dict, self):
+                sample_dict["x"] = torch.randn(sample_dict["N"], batch_size, device=self.device) * 3 + 10 
+                sample_dict["u"] = torch.randn(sample_dict["N"], batch_size, device=self.device) * 10 + 100
+                sample_dict["inter"] = sample_dict["x"] * sample_dict["u"]
+        else:
+            sample_dict = copy.copy(sample_dict)
+
+        plates = self.get_plates(batch_size, sample_dict)
+        with plates["plate_batch"]:
+            sample_dict["mu_beta"] = self.r_sample("mu_beta", self.scalar_normal_dist(0.0, 1.0))
+            with plates["plate_beta"]:
+                sample_dict["beta"] = self.r_sample("beta", dist.Normal(100 * sample_dict["mu_beta"],
+                                                                        torch.ones_like(sample_dict["mu_beta"]) * 10))
+            sample_dict["mu_a"] = self.r_sample("mu_a", self.scalar_normal_dist(0.0, 1.0))
+            sample_dict["mu_b"] = self.r_sample("mu_b", self.scalar_normal_dist(0.0, 1.0))
+            with plates["plate_county"]:
+                sample_dict["a"] = self.r_sample("a", dist.Normal(sample_dict["mu_a"], 
+                                                                  torch.ones_like(sample_dict["mu_a"]) * 0.5))
+                sample_dict["b"] = self.r_sample("b", dist.Normal(0.1 * sample_dict["mu_b"], 
+                                                                  torch.ones_like(sample_dict["mu_b"]) * 0.05))
+            with plates["plate_n"]:
+                y_hat = sample_dict["a"][..., sample_dict["county"], :] + \
+                        sample_dict["b"][..., sample_dict["county"], :] * sample_dict["x"] + \
+                        sample_dict["u"] * sample_dict["beta"][..., 0, :] + \
+                        sample_dict["inter"] * sample_dict["beta"][..., 1, :]
+                sample_dict["y"] = self.r_obs("y",
+                                              dist.Normal(y_hat, torch.ones_like(y_hat) * 0.1),
+                                              obs=sample_dict.get("y", None))
+        return sample_dict
+
+
+class ARM_radon_intercept_chr(BaseVAEwRegister):
+    x_dim = 50
+    theta_dim = 6
+
+    def get_plates(self, batch_size, sample_dict):
+        return {
+            "plate_batch": self.plate("plate_batch", batch_size, dim=-1),
+            "plate_n": self.plate("plate_n", sample_dict["N"], dim=-2),
+            "plate_county": self.plate("plate_county", sample_dict["n_county"], dim=-2),
+        }
+
+    def model(self, batch_size, sample_dict):
+        if sample_dict is None:
+            sample_dict = SampleDict()
+            with MetaDataContext(sample_dict, self):
+                sample_dict["N"] = 50
+                sample_dict["n_county"] = 5
+                assert sample_dict["N"] % sample_dict["n_county"] == 0
+                r = sample_dict["N"] // sample_dict["n_county"]
+                sample_dict["county"] = repeat(torch.arange(sample_dict["n_county"], device=self.device),
+                                                 "k -> (r k)", r=r)
+            with DataContext(sample_dict, self):
+                pass
+        else:
+            sample_dict = copy.copy(sample_dict)
+
+        plates = self.get_plates(batch_size, sample_dict)
+        with plates["plate_batch"]:
+            sample_dict["mu_a"] = self.r_sample("mu_a", self.scalar_normal_dist(0.0, 1.0))
+            with plates["plate_county"]:
+                sample_dict["eta"] = self.r_sample("eta", self.scalar_normal_dist(0.0, 1.0))
+            a = 10 * sample_dict["mu_a"] + 2 * sample_dict["eta"]
+            with plates["plate_n"]:
+                y_hat = a[..., sample_dict["county"], :]
+                sample_dict["y"] = self.r_obs("y",
+                                              dist.Normal(y_hat, torch.ones_like(y_hat) * 0.1),
+                                              obs=sample_dict.get("y", None))
+        return sample_dict
+
+
+class ARM_radon_intercept(BaseVAEwRegister):
+    x_dim = 50
+    theta_dim = 6
+
+    def get_plates(self, batch_size, sample_dict):
+        return {
+            "plate_batch": self.plate("plate_batch", batch_size, dim=-1),
+            "plate_n": self.plate("plate_n", sample_dict["N"], dim=-2),
+            "plate_county": self.plate("plate_county", sample_dict["n_county"], dim=-2),
+        }
+
+    def model(self, batch_size, sample_dict):
+        if sample_dict is None:
+            sample_dict = SampleDict()
+            with MetaDataContext(sample_dict, self):
+                sample_dict["N"] = 50
+                sample_dict["n_county"] = 5
+                assert sample_dict["N"] % sample_dict["n_county"] == 0
+                r = sample_dict["N"] // sample_dict["n_county"]
+                sample_dict["county"] = repeat(torch.arange(sample_dict["n_county"], device=self.device),
+                                                 "k -> (r k)", r=r)
+            with DataContext(sample_dict, self):
+                pass
+        else:
+            sample_dict = copy.copy(sample_dict)
+
+        plates = self.get_plates(batch_size, sample_dict)
+        with plates["plate_batch"]:
+            sample_dict["mu_a"] = self.r_sample("mu_a", self.scalar_normal_dist(0.0, 1.0))
+            with plates["plate_county"]:
+                sample_dict["a"] = self.r_sample("a", dist.Normal(sample_dict["mu_a"],
+                                                                  torch.ones_like(sample_dict["mu_a"]) * 0.5))
+            with plates["plate_n"]:
+                y_hat = sample_dict["a"][..., sample_dict["county"], :]
+                sample_dict["y"] = self.r_obs("y",
+                                              dist.Normal(y_hat, torch.ones_like(y_hat) * 0.1),
+                                              obs=sample_dict.get("y", None))
+        return sample_dict
+
+
+class ARM_radon_no_pool_chr(BaseVAEwRegister):
+    x_dim = 100
+    theta_dim = 7
+
+    def get_plates(self, batch_size, sample_dict):
+        return {
+            "plate_batch": self.plate("plate_batch", batch_size, dim=-1),
+            "plate_n": self.plate("plate_n", sample_dict["N"], dim=-2),
+            "plate_county": self.plate("plate_county", sample_dict["n_county"], dim=-2),
+        }
+
+    def model(self, batch_size, sample_dict):
+        if sample_dict is None:
+            sample_dict = SampleDict()
+            with MetaDataContext(sample_dict, self):
+                sample_dict["N"] = 50
+                sample_dict["n_county"] = 5
+                assert sample_dict["N"] % sample_dict["n_county"] == 0
+                r = sample_dict["N"] // sample_dict["n_county"]
+                sample_dict["county"] = repeat(torch.arange(sample_dict["n_county"], device=self.device),
+                                                 "k -> (r k)", r=r)
+            with DataContext(sample_dict, self):
+                sample_dict["x"] = torch.randn(sample_dict["N"], batch_size, device=self.device) * 3 + 10
+        else:
+            sample_dict = copy.copy(sample_dict)
+
+        plates = self.get_plates(batch_size, sample_dict)
+        with plates["plate_batch"]:
+            sample_dict["mu_a"] = self.r_sample("mu_a", self.scalar_normal_dist(0.0, 1.0))
+            with plates["plate_county"]:
+                sample_dict["eta"] = self.r_sample("eta", self.scalar_normal_dist(0.0, 1.0))
+            sample_dict["beta"] = self.r_sample("beta", self.scalar_normal_dist(0.0, 1.0))
+            a = sample_dict["mu_a"] + 0.5 * sample_dict["eta"]
+            with plates["plate_n"]:
+                y_hat = a[..., sample_dict["county"], :] + \
+                        sample_dict["beta"] * sample_dict["x"]
+                sample_dict["y"] = self.r_obs("y",
+                                              dist.Normal(y_hat, torch.ones_like(y_hat) * 0.1),
+                                              obs=sample_dict.get("y", None))
+        return sample_dict
+
+
+class ARM_radon_no_pool(BaseVAEwRegister):
+    x_dim = 100
+    theta_dim = 7
+
+    def get_plates(self, batch_size, sample_dict):
+        return {
+            "plate_batch": self.plate("plate_batch", batch_size, dim=-1),
+            "plate_n": self.plate("plate_n", sample_dict["N"], dim=-2),
+            "plate_county": self.plate("plate_county", sample_dict["n_county"], dim=-2),
+        }
+
+    def model(self, batch_size, sample_dict):
+        if sample_dict is None:
+            sample_dict = SampleDict()
+            with MetaDataContext(sample_dict, self):
+                sample_dict["N"] = 50
+                sample_dict["n_county"] = 5
+                assert sample_dict["N"] % sample_dict["n_county"] == 0
+                r = sample_dict["N"] // sample_dict["n_county"]
+                sample_dict["county"] = repeat(torch.arange(sample_dict["n_county"], device=self.device),
+                                                 "k -> (r k)", r=r)
+            with DataContext(sample_dict, self):
+                sample_dict["x"] = torch.randn(sample_dict["N"], batch_size, device=self.device) * 3 + 10
+        else:
+            sample_dict = copy.copy(sample_dict)
+
+        plates = self.get_plates(batch_size, sample_dict)
+        with plates["plate_batch"]:
+            sample_dict["mu_a"] = self.r_sample("mu_a", self.scalar_normal_dist(0.0, 1.0))
+            with plates["plate_county"]:
+                sample_dict["a"] = self.r_sample("a", dist.Normal(sample_dict["mu_a"],
+                                                                  torch.ones_like(sample_dict["mu_a"]) * 0.5))
+            sample_dict["beta"] = self.r_sample("beta", self.scalar_normal_dist(0.0, 1.0))
+            with plates["plate_n"]:
+                y_hat = sample_dict["a"][..., sample_dict["county"], :] + \
+                        sample_dict["beta"] * sample_dict["x"]
+                sample_dict["y"] = self.r_obs("y",
+                                              dist.Normal(y_hat, torch.ones_like(y_hat) * 0.1),
+                                              obs=sample_dict.get("y", None))
+        return sample_dict
+
+
+class ARM_radon_redundant_chr(BaseVAEwRegister):
+    x_dim = 50
+    theta_dim = 6
+
+    def get_plates(self, batch_size, sample_dict):
+        return {
+            "plate_batch": self.plate("plate_batch", batch_size, dim=-1),
+            "plate_n": self.plate("plate_n", sample_dict["N"], dim=-2),
+            "plate_county": self.plate("plate_county", sample_dict["n_county"], dim=-2),
+        }
+
+    def model(self, batch_size, sample_dict):
+        if sample_dict is None:
+            sample_dict = SampleDict()
+            with MetaDataContext(sample_dict, self):
+                sample_dict["N"] = 50
+                sample_dict["n_county"] = 5
+                assert sample_dict["N"] % sample_dict["n_county"] == 0
+                r = sample_dict["N"] // sample_dict["n_county"]
+                sample_dict["county"] = repeat(torch.arange(sample_dict["n_county"], device=self.device),
+                                                 "k -> (r k)", r=r)
+            with DataContext(sample_dict, self):
+                pass
+        else:
+            sample_dict = copy.copy(sample_dict)
+
+        plates = self.get_plates(batch_size, sample_dict)
+        with plates["plate_batch"]:
+            sample_dict["mu_eta"] = self.r_sample("mu_eta", self.scalar_normal_dist(0.0, 1.0))
+            with plates["plate_county"]:
+                sample_dict["eta"] = self.r_sample("eta", self.scalar_normal_dist(0.0, 3.0))
+                a = 100 * sample_dict["mu_eta"] + 3 * sample_dict["eta"]
+            with plates["plate_n"]:
+                y_hat = a[..., sample_dict["county"], :] + \
+                        100 * sample_dict["mu_eta"]
+                sample_dict["y"] = self.r_obs("y",
+                                              dist.Normal(y_hat, torch.ones_like(y_hat) * 0.1),
+                                              obs=sample_dict.get("y", None))
+        return sample_dict
+
+
+class ARM_radon_redundant(BaseVAEwRegister):
+    x_dim = 50
+    theta_dim = 6
+
+    def get_plates(self, batch_size, sample_dict):
+        return {
+            "plate_batch": self.plate("plate_batch", batch_size, dim=-1),
+            "plate_n": self.plate("plate_n", sample_dict["N"], dim=-2),
+            "plate_county": self.plate("plate_county", sample_dict["n_county"], dim=-2),
+        }
+
+    def model(self, batch_size, sample_dict):
+        if sample_dict is None:
+            sample_dict = SampleDict()
+            with MetaDataContext(sample_dict, self):
+                sample_dict["N"] = 50
+                sample_dict["n_county"] = 5
+                assert sample_dict["N"] % sample_dict["n_county"] == 0
+                r = sample_dict["N"] // sample_dict["n_county"]
+                sample_dict["county"] = repeat(torch.arange(sample_dict["n_county"], device=self.device),
+                                                 "k -> (r k)", r=r)
+            with DataContext(sample_dict, self):
+                pass
+        else:
+            sample_dict = copy.copy(sample_dict)
+
+        plates = self.get_plates(batch_size, sample_dict)
+        with plates["plate_batch"]:
+            sample_dict["mu"] = self.r_sample("mu", self.scalar_normal_dist(0.0, 1.0))
+            with plates["plate_county"]:
+                sample_dict["eta"] = self.r_sample("eta", self.scalar_normal_dist(0.0, 10.0))
+            with plates["plate_n"]:
+                y_hat = sample_dict["eta"][..., sample_dict["county"], :] + \
+                        100 * sample_dict["mu"]
+                sample_dict["y"] = self.r_obs("y",
+                                              dist.Normal(y_hat, torch.ones_like(y_hat) * 0.1),
+                                              obs=sample_dict.get("y", None))
+        return sample_dict
+
+
+class ARM_radon_vary_intercept_floor_chr(BaseVAEwRegister):
+    x_dim = 150
+    theta_dim = 8
+
+    def get_plates(self, batch_size, sample_dict):
+        return {
+            "plate_batch": self.plate("plate_batch", batch_size, dim=-1),
+            "plate_n": self.plate("plate_n", sample_dict["N"], dim=-2),
+            "plate_county": self.plate("plate_county", sample_dict["n_county"], dim=-2),
+            "plate_b": self.plate("b", 2, dim=-2),
+        }
+
+    def model(self, batch_size, sample_dict):
+        if sample_dict is None:
+            sample_dict = SampleDict()
+            with MetaDataContext(sample_dict, self):
+                sample_dict["N"] = 50
+                sample_dict["n_county"] = 5
+                assert sample_dict["N"] % sample_dict["n_county"] == 0
+                r = sample_dict["N"] // sample_dict["n_county"]
+                sample_dict["county"] = repeat(torch.arange(sample_dict["n_county"], device=self.device),
+                                                 "k -> (r k)", r=r)
+            with DataContext(sample_dict, self):
+                sample_dict["x"] = torch.randn(sample_dict["N"], batch_size, device=self.device) * 3 + 10 
+                sample_dict["u"] = torch.randn(sample_dict["N"], batch_size, device=self.device) * 10 + 100
+        else:
+            sample_dict = copy.copy(sample_dict)
+
+        plates = self.get_plates(batch_size, sample_dict)
+        with plates["plate_batch"]:
+            sample_dict["mu_a"] = self.r_sample("mu_a", self.scalar_normal_dist(0.0, 1.0))
+            with plates["plate_county"]:
+                sample_dict["eta"] = self.r_sample("eta", self.scalar_normal_dist(0.0, 1.0))
+            with plates["plate_b"]:
+                sample_dict["b"] = self.r_sample("b", self.scalar_normal_dist(0.0, 1.0))
+            a = sample_dict["mu_a"] + 0.5 * sample_dict["eta"]
+            with plates["plate_n"]:
+                y_hat = a[..., sample_dict["county"], :] + \
+                        sample_dict["u"] * sample_dict["b"][..., 0, :] + \
+                        sample_dict["x"] * sample_dict["b"][..., 1, :]
+                sample_dict["y"] = self.r_obs("y",
+                                              dist.Normal(y_hat, torch.ones_like(y_hat) * 0.1),
+                                              obs=sample_dict.get("y", None))
+        return sample_dict
+
+
+class ARM_radon_vary_intercept_floor(BaseVAEwRegister):
+    x_dim = 150
+    theta_dim = 8
+
+    def get_plates(self, batch_size, sample_dict):
+        return {
+            "plate_batch": self.plate("plate_batch", batch_size, dim=-1),
+            "plate_n": self.plate("plate_n", sample_dict["N"], dim=-2),
+            "plate_county": self.plate("plate_county", sample_dict["n_county"], dim=-2),
+            "plate_b": self.plate("b", 2, dim=-2),
+        }
+
+    def model(self, batch_size, sample_dict):
+        if sample_dict is None:
+            sample_dict = SampleDict()
+            with MetaDataContext(sample_dict, self):
+                sample_dict["N"] = 50
+                sample_dict["n_county"] = 5
+                assert sample_dict["N"] % sample_dict["n_county"] == 0
+                r = sample_dict["N"] // sample_dict["n_county"]
+                sample_dict["county"] = repeat(torch.arange(sample_dict["n_county"], device=self.device),
+                                                 "k -> (r k)", r=r)
+            with DataContext(sample_dict, self):
+                sample_dict["x"] = torch.randn(sample_dict["N"], batch_size, device=self.device) * 3 + 10 
+                sample_dict["u"] = torch.randn(sample_dict["N"], batch_size, device=self.device) * 10 + 100
+        else:
+            sample_dict = copy.copy(sample_dict)
+
+        plates = self.get_plates(batch_size, sample_dict)
+        with plates["plate_batch"]:
+            sample_dict["mu_a"] = self.r_sample("mu_a", self.scalar_normal_dist(0.0, 1.0))
+            with plates["plate_county"]:
+                sample_dict["a"] = self.r_sample("a", dist.Normal(sample_dict["mu_a"],
+                                                                  torch.ones_like(sample_dict["mu_a"]) * 0.5))
+            with plates["plate_b"]:
+                sample_dict["b"] = self.r_sample("b", self.scalar_normal_dist(0.0, 1.0))
+            with plates["plate_n"]:
+                y_hat = sample_dict["a"][..., sample_dict["county"], :] + \
+                        sample_dict["u"] * sample_dict["b"][..., 0, :] + \
+                        sample_dict["x"] * sample_dict["b"][..., 1, :]
+                sample_dict["y"] = self.r_obs("y",
+                                              dist.Normal(y_hat, torch.ones_like(y_hat) * 0.1),
+                                              obs=sample_dict.get("y", None))
+        return sample_dict
+    
+
+class ARM_radon_vary_intercept_floor2_chr(BaseVAEwRegister):
+    x_dim = 151
+    theta_dim = 9
+
+    def get_plates(self, batch_size, sample_dict):
+        return {
+            "plate_batch": self.plate("plate_batch", batch_size, dim=-1),
+            "plate_n": self.plate("plate_n", sample_dict["N"], dim=-2),
+            "plate_county": self.plate("plate_county", sample_dict["n_county"], dim=-2),
+            "plate_b": self.plate("b", 3, dim=-2),
+        }
+
+    def model(self, batch_size, sample_dict):
+        if sample_dict is None:
+            sample_dict = SampleDict()
+            with MetaDataContext(sample_dict, self):
+                sample_dict["N"] = 50
+                sample_dict["n_county"] = 5
+                assert sample_dict["N"] % sample_dict["n_county"] == 0
+                r = sample_dict["N"] // sample_dict["n_county"]
+                sample_dict["county"] = repeat(torch.arange(sample_dict["n_county"], device=self.device),
+                                                 "k -> (r k)", r=r)
+            with DataContext(sample_dict, self):
+                sample_dict["x"] = torch.randn(sample_dict["N"], batch_size, device=self.device) * 3 + 10 
+                sample_dict["x_mean"] = torch.mean(sample_dict["x"], dim=-2)
+                sample_dict["u"] = torch.randn(sample_dict["N"], batch_size, device=self.device) * 10 + 100
+        else:
+            sample_dict = copy.copy(sample_dict)
+
+        plates = self.get_plates(batch_size, sample_dict)
+        with plates["plate_batch"]:
+            sample_dict["mu_a"] = self.r_sample("mu_a", self.scalar_normal_dist(0.0, 1.0))
+            with plates["plate_county"]:
+                sample_dict["eta"] = self.r_sample("eta", self.scalar_normal_dist(0.0, 1.0))
+            with plates["plate_b"]:
+                sample_dict["b"] = self.r_sample("b", self.scalar_normal_dist(0.0, 1.0))
+            a = sample_dict["mu_a"] + 0.5 * sample_dict["eta"]
+            with plates["plate_n"]:
+                y_hat = a[..., sample_dict["county"], :] + \
+                        sample_dict["u"] * sample_dict["b"][..., 0, :] + \
+                        sample_dict["x"] * sample_dict["b"][..., 1, :] + \
+                        sample_dict["x_mean"] * sample_dict["b"][..., 2, :]
+                sample_dict["y"] = self.r_obs("y",
+                                              dist.Normal(y_hat, torch.ones_like(y_hat) * 0.1),
+                                              obs=sample_dict.get("y", None))
+        return sample_dict
+
+
+class ARM_radon_vary_intercept_floor2(BaseVAEwRegister):
+    x_dim = 151
+    theta_dim = 9
+
+    def get_plates(self, batch_size, sample_dict):
+        return {
+            "plate_batch": self.plate("plate_batch", batch_size, dim=-1),
+            "plate_n": self.plate("plate_n", sample_dict["N"], dim=-2),
+            "plate_county": self.plate("plate_county", sample_dict["n_county"], dim=-2),
+            "plate_b": self.plate("b", 3, dim=-2),
+        }
+
+    def model(self, batch_size, sample_dict):
+        if sample_dict is None:
+            sample_dict = SampleDict()
+            with MetaDataContext(sample_dict, self):
+                sample_dict["N"] = 50
+                sample_dict["n_county"] = 5
+                assert sample_dict["N"] % sample_dict["n_county"] == 0
+                r = sample_dict["N"] // sample_dict["n_county"]
+                sample_dict["county"] = repeat(torch.arange(sample_dict["n_county"], device=self.device),
+                                                 "k -> (r k)", r=r)
+            with DataContext(sample_dict, self):
+                sample_dict["x"] = torch.randn(sample_dict["N"], batch_size, device=self.device) * 3 + 10 
+                sample_dict["x_mean"] = torch.mean(sample_dict["x"], dim=-2)
+                sample_dict["u"] = torch.randn(sample_dict["N"], batch_size, device=self.device) * 10 + 100
+        else:
+            sample_dict = copy.copy(sample_dict)
+
+        plates = self.get_plates(batch_size, sample_dict)
+        with plates["plate_batch"]:
+            sample_dict["mu_a"] = self.r_sample("mu_a", self.scalar_normal_dist(0.0, 1.0))
+            with plates["plate_county"]:
+                sample_dict["a"] = self.r_sample("a", dist.Normal(sample_dict["mu_a"],
+                                                                  torch.ones_like(sample_dict["mu_a"]) * 0.5))
+            with plates["plate_b"]:
+                sample_dict["b"] = self.r_sample("b", self.scalar_normal_dist(0.0, 1.0))
+            with plates["plate_n"]:
+                y_hat = sample_dict["a"][..., sample_dict["county"], :] + \
+                        sample_dict["u"] * sample_dict["b"][..., 0, :] + \
+                        sample_dict["x"] * sample_dict["b"][..., 1, :] + \
+                        sample_dict["x_mean"] * sample_dict["b"][..., 2, :]
+                sample_dict["y"] = self.r_obs("y",
+                                              dist.Normal(y_hat, torch.ones_like(y_hat) * 0.1),
+                                              obs=sample_dict.get("y", None))
+        return sample_dict
+
+
+class ARM_radon_vary_intercept_nofloor_chr(BaseVAEwRegister):
+    x_dim = 100
+    theta_dim = 7
+
+    def get_plates(self, batch_size, sample_dict):
+        return {
+            "plate_batch": self.plate("plate_batch", batch_size, dim=-1),
+            "plate_n": self.plate("plate_n", sample_dict["N"], dim=-2),
+            "plate_county": self.plate("plate_county", sample_dict["n_county"], dim=-2),
+        }
+
+    def model(self, batch_size, sample_dict):
+        if sample_dict is None:
+            sample_dict = SampleDict()
+            with MetaDataContext(sample_dict, self):
+                sample_dict["N"] = 50
+                sample_dict["n_county"] = 5
+                assert sample_dict["N"] % sample_dict["n_county"] == 0
+                r = sample_dict["N"] // sample_dict["n_county"]
+                sample_dict["county"] = repeat(torch.arange(sample_dict["n_county"], device=self.device),
+                                                 "k -> (r k)", r=r)
+            with DataContext(sample_dict, self):
+                sample_dict["u"] = torch.randn(sample_dict["N"], batch_size, device=self.device) * 10 + 100
+        else:
+            sample_dict = copy.copy(sample_dict)
+
+        plates = self.get_plates(batch_size, sample_dict)
+        with plates["plate_batch"]:
+            sample_dict["mu_a"] = self.r_sample("mu_a", self.scalar_normal_dist(0.0, 1.0))
+            with plates["plate_county"]:
+                sample_dict["eta"] = self.r_sample("eta", self.scalar_normal_dist(0.0, 1.0))
+            sample_dict["b"] = self.r_sample("b", self.scalar_normal_dist(0.0, 1.0))
+            a = sample_dict["mu_a"] + 0.5 * sample_dict["eta"]
+            with plates["plate_n"]:
+                y_hat = a[..., sample_dict["county"], :] + \
+                        sample_dict["u"] * sample_dict["b"] * 0.1
+                sample_dict["y"] = self.r_obs("y",
+                                              dist.Normal(y_hat, torch.ones_like(y_hat) * 0.1),
+                                              obs=sample_dict.get("y", None))
+        return sample_dict
+
+
+class ARM_radon_vary_intercept_nofloor(BaseVAEwRegister):
+    x_dim = 100
+    theta_dim = 7
+
+    def get_plates(self, batch_size, sample_dict):
+        return {
+            "plate_batch": self.plate("plate_batch", batch_size, dim=-1),
+            "plate_n": self.plate("plate_n", sample_dict["N"], dim=-2),
+            "plate_county": self.plate("plate_county", sample_dict["n_county"], dim=-2),
+        }
+
+    def model(self, batch_size, sample_dict):
+        if sample_dict is None:
+            sample_dict = SampleDict()
+            with MetaDataContext(sample_dict, self):
+                sample_dict["N"] = 50
+                sample_dict["n_county"] = 5
+                assert sample_dict["N"] % sample_dict["n_county"] == 0
+                r = sample_dict["N"] // sample_dict["n_county"]
+                sample_dict["county"] = repeat(torch.arange(sample_dict["n_county"], device=self.device),
+                                                 "k -> (r k)", r=r)
+            with DataContext(sample_dict, self):
+                sample_dict["u"] = torch.randn(sample_dict["N"], batch_size, device=self.device) * 10 + 100
+        else:
+            sample_dict = copy.copy(sample_dict)
+
+        plates = self.get_plates(batch_size, sample_dict)
+        with plates["plate_batch"]:
+            sample_dict["mu_a"] = self.r_sample("mu_a", self.scalar_normal_dist(0.0, 1.0))
+            with plates["plate_county"]:
+                sample_dict["a"] = self.r_sample("a", dist.Normal(sample_dict["mu_a"],
+                                                                  torch.ones_like(sample_dict["mu_a"]) * 0.5))
+            sample_dict["b"] = self.r_sample("b", self.scalar_normal_dist(0.0, 1.0))
+            with plates["plate_n"]:
+                y_hat = sample_dict["a"][..., sample_dict["county"], :] + \
+                        sample_dict["u"] * sample_dict["b"] * 0.1
+                sample_dict["y"] = self.r_obs("y",
+                                              dist.Normal(y_hat, torch.ones_like(y_hat) * 0.1),
+                                              obs=sample_dict.get("y", None))
+        return sample_dict
+
+
+class ARM_radon_vary_si_chr(BaseVAEwRegister):
+    x_dim = 100
+    theta_dim = 12
+
+    def get_plates(self, batch_size, sample_dict):
+        return {
+            "plate_batch": self.plate("plate_batch", batch_size, dim=-1),
+            "plate_n": self.plate("plate_n", sample_dict["N"], dim=-2),
+            "plate_county": self.plate("plate_county", sample_dict["n_county"], dim=-2),
+        }
+
+    def model(self, batch_size, sample_dict):
+        if sample_dict is None:
+            sample_dict = SampleDict()
+            with MetaDataContext(sample_dict, self):
+                sample_dict["N"] = 50
+                sample_dict["n_county"] = 5
+                assert sample_dict["N"] % sample_dict["n_county"] == 0
+                r = sample_dict["N"] // sample_dict["n_county"]
+                sample_dict["county"] = repeat(torch.arange(sample_dict["n_county"], device=self.device),
+                                                 "k -> (r k)", r=r)
+            with DataContext(sample_dict, self):
+                sample_dict["x"] = torch.randn(sample_dict["N"], batch_size, device=self.device) * 3 + 10 
+        else:
+            sample_dict = copy.copy(sample_dict)
+
+        plates = self.get_plates(batch_size, sample_dict)
+        with plates["plate_batch"]:
+            sample_dict["mu_a1"] = self.r_sample("mu_a1", self.scalar_normal_dist(0.0, 1.0))
+            sample_dict["mu_a2"] = self.r_sample("mu_a2", self.scalar_normal_dist(0.0, 1.0))
+            with plates["plate_county"]:
+                sample_dict["eta1"] = self.r_sample("eta1", self.scalar_normal_dist(0.0, 1.0))
+                sample_dict["eta2"] = self.r_sample("eta2", self.scalar_normal_dist(0.0, 1.0))
+            a1 = sample_dict["mu_a1"] + 0.4 * sample_dict["eta1"]
+            a2 = 0.1 * sample_dict["mu_a2"] + 0.05 * sample_dict["eta2"]
+            with plates["plate_n"]:
+                y_hat = a1[..., sample_dict["county"], :] + \
+                        a2[..., sample_dict["county"], :] * sample_dict["x"]
+                sample_dict["y"] = self.r_obs("y",
+                                              dist.Normal(y_hat, torch.ones_like(y_hat) * 0.1),
+                                              obs=sample_dict.get("y", None))
+        return sample_dict
+
+
+class ARM_radon_vary_si(BaseVAEwRegister):
+    x_dim = 100
+    theta_dim = 12
+
+    def get_plates(self, batch_size, sample_dict):
+        return {
+            "plate_batch": self.plate("plate_batch", batch_size, dim=-1),
+            "plate_n": self.plate("plate_n", sample_dict["N"], dim=-2),
+            "plate_county": self.plate("plate_county", sample_dict["n_county"], dim=-2),
+        }
+
+    def model(self, batch_size, sample_dict):
+        if sample_dict is None:
+            sample_dict = SampleDict()
+            with MetaDataContext(sample_dict, self):
+                sample_dict["N"] = 50
+                sample_dict["n_county"] = 5
+                assert sample_dict["N"] % sample_dict["n_county"] == 0
+                r = sample_dict["N"] // sample_dict["n_county"]
+                sample_dict["county"] = repeat(torch.arange(sample_dict["n_county"], device=self.device),
+                                                 "k -> (r k)", r=r)
+            with DataContext(sample_dict, self):
+                sample_dict["x"] = torch.randn(sample_dict["N"], batch_size, device=self.device) * 3 + 10 
+        else:
+            sample_dict = copy.copy(sample_dict)
+
+        plates = self.get_plates(batch_size, sample_dict)
+        with plates["plate_batch"]:
+            sample_dict["mu_a1"] = self.r_sample("mu_a1", self.scalar_normal_dist(0.0, 1.0))
+            sample_dict["mu_a2"] = self.r_sample("mu_a2", self.scalar_normal_dist(0.0, 1.0))
+            with plates["plate_county"]:
+                sample_dict["a1"] = self.r_sample("a1", dist.Normal(sample_dict["mu_a1"],
+                                                                    torch.ones_like(sample_dict["mu_a1"]) * 0.5))
+                sample_dict["a2"] = self.r_sample("a2", dist.Normal(sample_dict["mu_a2"],
+                                                                    torch.ones_like(sample_dict["mu_a2"]) * 0.5))
+            with plates["plate_n"]:
+                y_hat = sample_dict["a1"][..., sample_dict["county"], :] + \
+                        sample_dict["a2"][..., sample_dict["county"], :] * sample_dict["x"]
+                sample_dict["y"] = self.r_obs("y",
+                                              dist.Normal(y_hat, torch.ones_like(y_hat) * 0.1),
+                                              obs=sample_dict.get("y", None))
+        return sample_dict
+
+
+class ARM_radon(BaseVAEwRegister):
+    x_dim = 50
+    theta_dim = 6
+
+    def get_plates(self, batch_size, sample_dict):
+        return {
+            "plate_batch": self.plate("plate_batch", batch_size, dim=-1),
+            "plate_n": self.plate("plate_n", sample_dict["N"], dim=-2),
+            "plate_county": self.plate("plate_county", sample_dict["n_county"], dim=-2),
+        }
+
+    def model(self, batch_size, sample_dict):
+        if sample_dict is None:
+            sample_dict = SampleDict()
+            with MetaDataContext(sample_dict, self):
+                sample_dict["N"] = 50
+                sample_dict["n_county"] = 5
+                assert sample_dict["N"] % sample_dict["n_county"] == 0
+                r = sample_dict["N"] // sample_dict["n_county"]
+                sample_dict["county"] = repeat(torch.arange(sample_dict["n_county"], device=self.device),
+                                                 "k -> (r k)", r=r)
+            with DataContext(sample_dict, self):
+                pass
+        else:
+            sample_dict = copy.copy(sample_dict)
+
+        plates = self.get_plates(batch_size, sample_dict)
+        with plates["plate_batch"]:
+            sample_dict["mu"] = self.r_sample("mu", self.scalar_normal_dist(0.0, 1.0))
+            with plates["plate_county"]:
+                sample_dict["eta"] = self.r_sample("eta", self.scalar_normal_dist(0.0, 3.0))
+            with plates["plate_n"]:
+                y_hat = sample_dict["eta"][..., sample_dict["county"], :] + \
+                        0.1 * sample_dict["mu"]
+                sample_dict["y"] = self.r_obs("y",
+                                              dist.Normal(y_hat, torch.ones_like(y_hat) * 0.1),
+                                              obs=sample_dict.get("y", None))
+        return sample_dict
+
+
+class ARM_roaches_overdispersion(BaseVAEwRegister):
+    x_dim = 250
+    theta_dim = 54
+
+    def get_plates(self, batch_size, sample_dict):
+        return {
+            "plate_batch": self.plate("plate_batch", batch_size, dim=-1),
+            "plate_n": self.plate("plate_n", sample_dict["N"], dim=-2),
+        }
+
+    def model(self, batch_size, sample_dict):
+        if sample_dict is None:
+            sample_dict = SampleDict()
+            with MetaDataContext(sample_dict, self):
+                sample_dict["N"] = 50
+            with DataContext(sample_dict, self):
+                sample_dict["roach1"] = torch.randn(sample_dict["N"], batch_size, device=self.device) * 5 + 20
+                sample_dict["treatment"] = torch.randint(low=0, high=2, 
+                                                         size=(sample_dict["N"], batch_size),
+                                                         device=self.device)
+                sample_dict["senior"] = torch.randint(low=0, high=2, 
+                                                    size=(sample_dict["N"], batch_size),
+                                                    device=self.device)
+                sample_dict["log_expo"] = torch.randn(sample_dict["N"], batch_size, device=self.device) * 0.25
+        else:
+            sample_dict = copy.copy(sample_dict)
+
+        plates = self.get_plates(batch_size, sample_dict)
+        with plates["plate_batch"]:
+            sample_dict["beta"] = self.r_sample("beta", dist.Normal(torch.zeros((4, ), device=self.device),
+                                                                    torch.ones((4, ), device=self.device) * 0.2).to_event(1))
+            with plates["plate_n"]:
+                sample_dict["lambda"] = self.r_sample("lambda", self.scalar_normal_dist(0.0, 0.1))
+                log_rate = sample_dict["lambda"] + \
+                           sample_dict["log_expo"] + \
+                           sample_dict["beta"][..., 0] + \
+                           sample_dict["beta"][..., 1] * sample_dict["roach1"] + \
+                           sample_dict["beta"][..., 2] * sample_dict["senior"] + \
+                           sample_dict["beta"][..., 3] * sample_dict["treatment"]
+                sample_dict["y"] = self.r_obs("y",
+                                              dist.Poisson(rate=log_rate.exp() + 1e-8),
+                                              obs=sample_dict.get("y", None))
+        return sample_dict
+
+
+class ARM_separation(BaseVAEwRegister):
+    x_dim = 100
+    theta_dim = 2
+
+    def get_plates(self, batch_size, sample_dict):
+        return {
+            "plate_batch": self.plate("plate_batch", batch_size, dim=-1),
+            "plate_n": self.plate("plate_n", sample_dict["N"], dim=-2),
+        }
+
+    def model(self, batch_size, sample_dict):
+        if sample_dict is None:
+            sample_dict = SampleDict()
+            with MetaDataContext(sample_dict, self):
+                sample_dict["N"] = 50
+            with DataContext(sample_dict, self):
+                sample_dict["x"] = torch.randn(sample_dict["N"], batch_size, device=self.device) * 5 + 30
+        else:
+            sample_dict = copy.copy(sample_dict)
+
+        plates = self.get_plates(batch_size, sample_dict)
+        with plates["plate_batch"]:
+            sample_dict["beta"] = self.r_sample("beta", dist.Normal(torch.zeros((2, ), device=self.device),
+                                                                    torch.ones((2, ), device=self.device) * 0.2).to_event(1))
+            with plates["plate_n"]:
+                logits = sample_dict["beta"][..., 0] + \
+                         sample_dict["beta"][..., 1] * sample_dict["x"]
+                sample_dict["y"] = self.r_obs("y",
+                                              dist.Bernoulli(logits=logits),
+                                              obs=sample_dict.get("y", None))
+        return sample_dict
+
+
+class ARM_sesame_multi_preds_3a(BaseVAEwRegister):
+    x_dim = 400
+    theta_dim = 8
+
+    def get_plates(self, batch_size, sample_dict):
+        return {
+            "plate_batch": self.plate("plate_batch", batch_size, dim=-1),
+            "plate_n": self.plate("plate_n", sample_dict["N"], dim=-2),
+        }
+
+    def model(self, batch_size, sample_dict):
+        if sample_dict is None:
+            sample_dict = SampleDict()
+            with MetaDataContext(sample_dict, self):
+                sample_dict["N"] = 50
+            with DataContext(sample_dict, self):
+                sample_dict["encouraged"] = torch.randint(low=0, high=1,
+                                                          size=(sample_dict["N"], batch_size),
+                                                          device=self.device)
+                sample_dict["setting"] = torch.randint(low=0, high=1,
+                                                          size=(sample_dict["N"], batch_size),
+                                                          device=self.device)
+                sample_dict["pretest"] = torch.randn(sample_dict["N"], batch_size, device=self.device) * 2 + 10
+                site = torch.randint(low=2, high=6,
+                                    size=(sample_dict["N"], batch_size),
+                                    device=self.device)
+                sample_dict["site2"] = (site == 2).float()
+                sample_dict["site3"] = (site == 3).float()
+                sample_dict["site4"] = (site == 4).float()
+                sample_dict["site5"] = (site == 5).float()
+        else:
+            sample_dict = copy.copy(sample_dict)
+
+        plates = self.get_plates(batch_size, sample_dict)
+        with plates["plate_batch"]:
+            sample_dict["beta"] = self.r_sample("beta", dist.Normal(torch.zeros((8, ), device=self.device),
+                                                                    torch.ones((8, ), device=self.device) * 0.2).to_event(1))
+            with plates["plate_n"]:
+                y_hat = sample_dict["beta"][..., 0] + \
+                        sample_dict["beta"][..., 1] * sample_dict["encouraged"] + \
+                        sample_dict["beta"][..., 2] * sample_dict["pretest"] + \
+                        sample_dict["beta"][..., 3] * sample_dict["site2"] + \
+                        sample_dict["beta"][..., 4] * sample_dict["site3"] + \
+                        sample_dict["beta"][..., 5] * sample_dict["site4"] + \
+                        sample_dict["beta"][..., 6] * sample_dict["site5"] + \
+                        sample_dict["beta"][..., 7] * sample_dict["setting"]
+                sample_dict["watched"] = self.r_obs("watched",
+                                                    dist.Normal(y_hat, torch.ones_like(y_hat) * 0.1),
+                                                    obs=sample_dict.get("watched", None))
+        return sample_dict
+
+
+class ARM_sesame_multi_preds_3b(BaseVAEwRegister):
+    x_dim = 400
+    theta_dim = 8
+
+    def get_plates(self, batch_size, sample_dict):
+        return {
+            "plate_batch": self.plate("plate_batch", batch_size, dim=-1),
+            "plate_n": self.plate("plate_n", sample_dict["N"], dim=-2),
+        }
+
+    def model(self, batch_size, sample_dict):
+        if sample_dict is None:
+            sample_dict = SampleDict()
+            with MetaDataContext(sample_dict, self):
+                sample_dict["N"] = 50
+            with DataContext(sample_dict, self):
+                sample_dict["watched_hat"] = torch.randn(sample_dict["N"], batch_size, device=self.device) * 3 + 20
+                sample_dict["setting"] = torch.randint(low=0, high=1,
+                                                          size=(sample_dict["N"], batch_size),
+                                                          device=self.device)
+                sample_dict["pretest"] = torch.randn(sample_dict["N"], batch_size, device=self.device) * 2 + 10
+                site = torch.randint(low=2, high=6,
+                                    size=(sample_dict["N"], batch_size),
+                                    device=self.device)
+                sample_dict["site2"] = (site == 2).float()
+                sample_dict["site3"] = (site == 3).float()
+                sample_dict["site4"] = (site == 4).float()
+                sample_dict["site5"] = (site == 5).float()
+        else:
+            sample_dict = copy.copy(sample_dict)
+
+        plates = self.get_plates(batch_size, sample_dict)
+        with plates["plate_batch"]:
+            sample_dict["beta"] = self.r_sample("beta", dist.Normal(torch.zeros((8, ), device=self.device),
+                                                                    torch.ones((8, ), device=self.device) * 0.2).to_event(1))
+            with plates["plate_n"]:
+                y_hat = sample_dict["beta"][..., 0] + \
+                        sample_dict["beta"][..., 1] * sample_dict["watched_hat"] + \
+                        sample_dict["beta"][..., 2] * sample_dict["pretest"] + \
+                        sample_dict["beta"][..., 3] * sample_dict["site2"] + \
+                        sample_dict["beta"][..., 4] * sample_dict["site3"] + \
+                        sample_dict["beta"][..., 5] * sample_dict["site4"] + \
+                        sample_dict["beta"][..., 6] * sample_dict["site5"] + \
+                        sample_dict["beta"][..., 7] * sample_dict["setting"]
+                sample_dict["y"] = self.r_obs("y",
+                                            dist.Normal(y_hat, torch.ones_like(y_hat) * 0.1),
+                                            obs=sample_dict.get("y", None))
+        return sample_dict
+
+
+class ARM_sesame_one_pred_2b(BaseVAEwRegister):
+    x_dim = 100
+    theta_dim = 2
+
+    def get_plates(self, batch_size, sample_dict):
+        return {
+            "plate_batch": self.plate("plate_batch", batch_size, dim=-1),
+            "plate_n": self.plate("plate_n", sample_dict["N"], dim=-2),
+        }
+
+    def model(self, batch_size, sample_dict):
+        if sample_dict is None:
+            sample_dict = SampleDict()
+            with MetaDataContext(sample_dict, self):
+                sample_dict["N"] = 50
+            with DataContext(sample_dict, self):
+                sample_dict["watched_hat"] = torch.randn(sample_dict["N"], batch_size, device=self.device) * 3 + 20
+        else:
+            sample_dict = copy.copy(sample_dict)
+
+        plates = self.get_plates(batch_size, sample_dict)
+        with plates["plate_batch"]:
+            sample_dict["beta"] = self.r_sample("beta", dist.Normal(torch.zeros((2, ), device=self.device),
+                                                                    torch.ones((2, ), device=self.device) * 0.2).to_event(1))
+            with plates["plate_n"]:
+                y_hat = sample_dict["beta"][..., 0] + \
+                        sample_dict["beta"][..., 1] * sample_dict["watched_hat"]
+                sample_dict["y"] = self.r_obs("y",
+                                            dist.Normal(y_hat, torch.ones_like(y_hat) * 0.1),
+                                            obs=sample_dict.get("y", None))
+        return sample_dict
+
+
+class ARM_sesame_one_pred_a(BaseVAEwRegister):
+    x_dim = 100
+    theta_dim = 2
+
+    def get_plates(self, batch_size, sample_dict):
+        return {
+            "plate_batch": self.plate("plate_batch", batch_size, dim=-1),
+            "plate_n": self.plate("plate_n", sample_dict["N"], dim=-2),
+        }
+
+    def model(self, batch_size, sample_dict):
+        if sample_dict is None:
+            sample_dict = SampleDict()
+            with MetaDataContext(sample_dict, self):
+                sample_dict["N"] = 50
+            with DataContext(sample_dict, self):
+                sample_dict["encouraged"] = torch.randint(low=0, high=1,
+                                                          size=(sample_dict["N"], batch_size),
+                                                          device=self.device)
+        else:
+            sample_dict = copy.copy(sample_dict)
+
+        plates = self.get_plates(batch_size, sample_dict)
+        with plates["plate_batch"]:
+            sample_dict["beta"] = self.r_sample("beta", dist.Normal(torch.zeros((2, ), device=self.device),
+                                                                    torch.ones((2, ), device=self.device) * 0.2).to_event(1))
+            with plates["plate_n"]:
+                y_hat = sample_dict["beta"][..., 0] + \
+                        sample_dict["beta"][..., 1] * sample_dict["encouraged"]
+                sample_dict["y"] = self.r_obs("y",
+                                            dist.Normal(y_hat, torch.ones_like(y_hat) * 0.1),
+                                            obs=sample_dict.get("y", None))
+        return sample_dict
+
+
+class ARM_unemployment(BaseVAEwRegister):
+    x_dim = 100
+    theta_dim = 2
+
+    def get_plates(self, batch_size, sample_dict):
+        return {
+            "plate_batch": self.plate("plate_batch", batch_size, dim=-1),
+            "plate_n": self.plate("plate_n", sample_dict["N"], dim=-2),
+        }
+
+    def model(self, batch_size, sample_dict):
+        if sample_dict is None:
+            sample_dict = SampleDict()
+            with MetaDataContext(sample_dict, self):
+                sample_dict["N"] = 50
+            with DataContext(sample_dict, self):
+                sample_dict["y_lag"] = torch.randn(sample_dict["N"], batch_size, device=self.device) * 3 + 10
+        else:
+            sample_dict = copy.copy(sample_dict)
+
+        plates = self.get_plates(batch_size, sample_dict)
+        with plates["plate_batch"]:
+            sample_dict["beta"] = self.r_sample("beta", dist.Normal(torch.zeros((2, ), device=self.device),
+                                                                    torch.ones((2, ), device=self.device) * 0.2).to_event(1))
+            with plates["plate_n"]:
+                y_hat = sample_dict["beta"][..., 0] + \
+                        sample_dict["beta"][..., 1] * sample_dict["y_hat"]
+                sample_dict["y"] = self.r_obs("y",
+                                            dist.Normal(y_hat, torch.ones_like(y_hat) * 0.1),
+                                            obs=sample_dict.get("y", None))
+        return sample_dict
+
+
+class ARM_weight(BaseVAEwRegister):
+    x_dim = 100
+    theta_dim = 2
+
+    def get_plates(self, batch_size, sample_dict):
+        return {
+            "plate_batch": self.plate("plate_batch", batch_size, dim=-1),
+            "plate_n": self.plate("plate_n", sample_dict["N"], dim=-2),
+        }
+
+    def model(self, batch_size, sample_dict):
+        if sample_dict is None:
+            sample_dict = SampleDict()
+            with MetaDataContext(sample_dict, self):
+                sample_dict["N"] = 50
+            with DataContext(sample_dict, self):
+                height = torch.randn(sample_dict["N"], batch_size, device=self.device) * 10 + 180
+                sample_dict["c_height"] = height - torch.mean(height, dim=0)
+        else:
+            sample_dict = copy.copy(sample_dict)
+
+        plates = self.get_plates(batch_size, sample_dict)
+        with plates["plate_batch"]:
+            sample_dict["a"] = self.r_sample("a", self.scalar_normal_dist(70.0, 5.0))
+            sample_dict["b"] = self.r_sample("b", self.scalar_normal_dist(0.0, 0.05))
+            with plates["plate_n"]:
+                y_hat = sample_dict["a"] + \
+                        sample_dict["b"] * sample_dict["c_height"]
+                sample_dict["y"] = self.r_obs("y",
+                                              dist.Normal(y_hat, torch.ones_like(y_hat) * 0.1),
+                                              obs=sample_dict.get("y", None))
+        return sample_dict
+
+
+class ARM_wells_d100ars(BaseVAEwRegister):
+    x_dim = 150
+    theta_dim = 3
+
+    def get_plates(self, batch_size, sample_dict):
+        return {
+            "plate_batch": self.plate("plate_batch", batch_size, dim=-1),
+            "plate_n": self.plate("plate_n", sample_dict["N"], dim=-2),
+        }
+
+    def model(self, batch_size, sample_dict):
+        if sample_dict is None:
+            sample_dict = SampleDict()
+            with MetaDataContext(sample_dict, self):
+                sample_dict["N"] = 50
+            with DataContext(sample_dict, self):
+                dist_ = torch.rand(sample_dict["N"], batch_size, device=self.device) * 100
+                sample_dict["dist100"] = dist_ / 100
+                sample_dict["arsenic"] = torch.rand(sample_dict["N"], batch_size, device=self.device) * 10 + 1
+        else:
+            sample_dict = copy.copy(sample_dict)
+
+        plates = self.get_plates(batch_size, sample_dict)
+        with plates["plate_batch"]:
+            sample_dict["beta"] = self.r_sample("beta", dist.Normal(torch.zeros((3, ), device=self.device),
+                                                                    torch.ones((3, ), device=self.device) * 0.2).to_event(1))
+            with plates["plate_n"]:
+                logits = sample_dict["beta"][..., 0] + \
+                         sample_dict["beta"][..., 1] * sample_dict["dist100"] + \
+                         sample_dict["beta"][..., 2] * sample_dict["arsenic"]
+                sample_dict["switched"] = self.r_obs("switched",
+                                                    dist.Bernoulli(logits=logits),
+                                                    obs=sample_dict.get("switched", None))
+        return sample_dict
+
+
+class ARM_wells_daae_c(BaseVAEwRegister):
+    x_dim = 300
+    theta_dim = 6
+
+    def get_plates(self, batch_size, sample_dict):
+        return {
+            "plate_batch": self.plate("plate_batch", batch_size, dim=-1),
+            "plate_n": self.plate("plate_n", sample_dict["N"], dim=-2),
+        }
+
+    def model(self, batch_size, sample_dict):
+        if sample_dict is None:
+            sample_dict = SampleDict()
+            with MetaDataContext(sample_dict, self):
+                sample_dict["N"] = 50
+            with DataContext(sample_dict, self):
+                dist_ = torch.rand(sample_dict["N"], batch_size, device=self.device) * 100
+                arsenic = torch.rand(sample_dict["N"], batch_size, device=self.device) * 10 + 1
+                educ = torch.randint(low=0, high=5,
+                                     size=(sample_dict["N"], batch_size),
+                                     device=self.device)
+                sample_dict["c_dist100"] = (dist_ - torch.mean(dist_, dim=0)) / 100
+                sample_dict["c_arsenic"] = arsenic - torch.mean(arsenic, dim=0)
+                sample_dict["da_inter"] = sample_dict["c_dist100"] * sample_dict["c_arsenic"]
+                sample_dict["assoc"] = torch.randn(sample_dict["N"], batch_size, device=self.device) * 2
+                sample_dict["educ4"] = educ / 4
+        else:
+            sample_dict = copy.copy(sample_dict)
+
+        plates = self.get_plates(batch_size, sample_dict)
+        with plates["plate_batch"]:
+            sample_dict["beta"] = self.r_sample("beta", dist.Normal(torch.zeros((6, ), device=self.device),
+                                                                    torch.ones((6, ), device=self.device) * 0.2).to_event(1))
+            with plates["plate_n"]:
+                logits = sample_dict["beta"][..., 0] + \
+                         sample_dict["beta"][..., 1] * sample_dict["c_dist100"] + \
+                         sample_dict["beta"][..., 2] * sample_dict["c_arsenic"] + \
+                         sample_dict["beta"][..., 3] * sample_dict["da_inter"] + \
+                         sample_dict["beta"][..., 4] * sample_dict["assoc"] + \
+                         sample_dict["beta"][..., 5] * sample_dict["educ4"]
+                sample_dict["switched"] = self.r_obs("switched",
+                                                    dist.Bernoulli(logits=logits),
+                                                    obs=sample_dict.get("switched", None))
+        return sample_dict
+
+
+class ARM_wells_dae_c(BaseVAEwRegister):
+    x_dim = 250
+    theta_dim = 5
+
+    def get_plates(self, batch_size, sample_dict):
+        return {
+            "plate_batch": self.plate("plate_batch", batch_size, dim=-1),
+            "plate_n": self.plate("plate_n", sample_dict["N"], dim=-2),
+        }
+
+    def model(self, batch_size, sample_dict):
+        if sample_dict is None:
+            sample_dict = SampleDict()
+            with MetaDataContext(sample_dict, self):
+                sample_dict["N"] = 50
+            with DataContext(sample_dict, self):
+                dist_ = torch.rand(sample_dict["N"], batch_size, device=self.device) * 100
+                arsenic = torch.rand(sample_dict["N"], batch_size, device=self.device) * 10 + 1
+                educ = torch.randint(low=0, high=5,
+                                     size=(sample_dict["N"], batch_size),
+                                     device=self.device)
+                sample_dict["c_dist100"] = (dist_ - torch.mean(dist_, dim=0)) / 100
+                sample_dict["c_arsenic"] = arsenic - torch.mean(arsenic, dim=0)
+                sample_dict["da_inter"] = sample_dict["c_dist100"] * sample_dict["c_arsenic"]
+                sample_dict["educ4"] = educ / 4
+        else:
+            sample_dict = copy.copy(sample_dict)
+
+        plates = self.get_plates(batch_size, sample_dict)
+        with plates["plate_batch"]:
+            sample_dict["beta"] = self.r_sample("beta", dist.Normal(torch.zeros((5, ), device=self.device),
+                                                                    torch.ones((5, ), device=self.device) * 0.2).to_event(1))
+            with plates["plate_n"]:
+                logits = sample_dict["beta"][..., 0] + \
+                         sample_dict["beta"][..., 1] * sample_dict["c_dist100"] + \
+                         sample_dict["beta"][..., 2] * sample_dict["c_arsenic"] + \
+                         sample_dict["beta"][..., 3] * sample_dict["da_inter"] + \
+                         sample_dict["beta"][..., 4] * sample_dict["educ4"]
+                sample_dict["switched"] = self.r_obs("switched",
+                                                    dist.Bernoulli(logits=logits),
+                                                    obs=sample_dict.get("switched", None))
+        return sample_dict
+
+
+class ARM_wells_dae_inter_c(BaseVAEwRegister):
+    x_dim = 350
+    theta_dim = 7
+
+    def get_plates(self, batch_size, sample_dict):
+        return {
+            "plate_batch": self.plate("plate_batch", batch_size, dim=-1),
+            "plate_n": self.plate("plate_n", sample_dict["N"], dim=-2),
+        }
+
+    def model(self, batch_size, sample_dict):
+        if sample_dict is None:
+            sample_dict = SampleDict()
+            with MetaDataContext(sample_dict, self):
+                sample_dict["N"] = 50
+            with DataContext(sample_dict, self):
+                dist_ = torch.rand(sample_dict["N"], batch_size, device=self.device) * 100
+                arsenic = torch.rand(sample_dict["N"], batch_size, device=self.device) * 10 + 1
+                educ = torch.randint(low=0, high=5,
+                                     size=(sample_dict["N"], batch_size),
+                                     device=self.device)
+                sample_dict["c_dist100"] = (dist_ - torch.mean(dist_, dim=0)) / 100
+                sample_dict["c_arsenic"] = arsenic - torch.mean(arsenic, dim=0)
+                sample_dict["c_educ4"] = (educ - torch.mean(educ, dim=0)) / 4
+                sample_dict["da_inter"] = sample_dict["c_dist100"] * sample_dict["c_arsenic"]
+                sample_dict["de_inter"] = sample_dict["c_dist100"] * sample_dict["c_educ4"]
+                sample_dict["ae_inter"] = sample_dict["c_arsenic"] * sample_dict["c_educ4"]
+        else:
+            sample_dict = copy.copy(sample_dict)
+
+        plates = self.get_plates(batch_size, sample_dict)
+        with plates["plate_batch"]:
+            sample_dict["beta"] = self.r_sample("beta", dist.Normal(torch.zeros((7, ), device=self.device),
+                                                                    torch.ones((7, ), device=self.device) * 0.2).to_event(1))
+            with plates["plate_n"]:
+                logits = sample_dict["beta"][..., 0] + \
+                         sample_dict["beta"][..., 1] * sample_dict["c_dist100"] + \
+                         sample_dict["beta"][..., 2] * sample_dict["c_arsenic"] + \
+                         sample_dict["beta"][..., 3] * sample_dict["c_educ4"] + \
+                         sample_dict["beta"][..., 4] * sample_dict["da_inter"] + \
+                         sample_dict["beta"][..., 5] * sample_dict["de_inter"] + \
+                         sample_dict["beta"][..., 6] * sample_dict["ae_inter"]
+                sample_dict["switched"] = self.r_obs("switched",
+                                                    dist.Bernoulli(logits=logits),
+                                                    obs=sample_dict.get("switched", None))
+        return sample_dict
+
+
+class ARM_wells_dae_inter(BaseVAEwRegister):
+    x_dim = 250
+    theta_dim = 5
+
+    def get_plates(self, batch_size, sample_dict):
+        return {
+            "plate_batch": self.plate("plate_batch", batch_size, dim=-1),
+            "plate_n": self.plate("plate_n", sample_dict["N"], dim=-2),
+        }
+
+    def model(self, batch_size, sample_dict):
+        if sample_dict is None:
+            sample_dict = SampleDict()
+            with MetaDataContext(sample_dict, self):
+                sample_dict["N"] = 50
+            with DataContext(sample_dict, self):
+                dist_ = torch.rand(sample_dict["N"], batch_size, device=self.device) * 100
+                arsenic = torch.rand(sample_dict["N"], batch_size, device=self.device) * 10 + 1
+                educ = torch.randint(low=0, high=5,
+                                     size=(sample_dict["N"], batch_size),
+                                     device=self.device)
+                sample_dict["dist100"] = dist_ / 100
+                sample_dict["arsenic"] = arsenic
+                sample_dict["educ4"] = educ / 4
+                sample_dict["inter"] = sample_dict["dist100"] * sample_dict["arsenic"]
+        else:
+            sample_dict = copy.copy(sample_dict)
+
+        plates = self.get_plates(batch_size, sample_dict)
+        with plates["plate_batch"]:
+            sample_dict["beta"] = self.r_sample("beta", dist.Normal(torch.zeros((5, ), device=self.device),
+                                                                    torch.ones((5, ), device=self.device) * 0.2).to_event(1))
+            with plates["plate_n"]:
+                logits = sample_dict["beta"][..., 0] + \
+                         sample_dict["beta"][..., 1] * sample_dict["dist100"] + \
+                         sample_dict["beta"][..., 2] * sample_dict["arsenic"] + \
+                         sample_dict["beta"][..., 3] * sample_dict["educ4"] + \
+                         sample_dict["beta"][..., 4] * sample_dict["inter"]
+                sample_dict["switched"] = self.r_obs("switched",
+                                                    dist.Bernoulli(logits=logits),
+                                                    obs=sample_dict.get("switched", None))
+        return sample_dict
+
+
+class ARM_wells_dae(BaseVAEwRegister):
+    x_dim = 200
+    theta_dim = 4
+
+    def get_plates(self, batch_size, sample_dict):
+        return {
+            "plate_batch": self.plate("plate_batch", batch_size, dim=-1),
+            "plate_n": self.plate("plate_n", sample_dict["N"], dim=-2),
+        }
+
+    def model(self, batch_size, sample_dict):
+        if sample_dict is None:
+            sample_dict = SampleDict()
+            with MetaDataContext(sample_dict, self):
+                sample_dict["N"] = 50
+            with DataContext(sample_dict, self):
+                dist_ = torch.rand(sample_dict["N"], batch_size, device=self.device) * 100
+                arsenic = torch.rand(sample_dict["N"], batch_size, device=self.device) * 10 + 1
+                educ = torch.randint(low=0, high=5,
+                                     size=(sample_dict["N"], batch_size),
+                                     device=self.device)
+                sample_dict["dist100"] = dist_ / 100
+                sample_dict["arsenic"] = arsenic
+                sample_dict["educ4"] = educ / 4
+        else:
+            sample_dict = copy.copy(sample_dict)
+
+        plates = self.get_plates(batch_size, sample_dict)
+        with plates["plate_batch"]:
+            sample_dict["beta"] = self.r_sample("beta", dist.Normal(torch.zeros((4, ), device=self.device),
+                                                                    torch.ones((4, ), device=self.device) * 0.2).to_event(1))
+            with plates["plate_n"]:
+                logits = sample_dict["beta"][..., 0] + \
+                         sample_dict["beta"][..., 1] * sample_dict["dist100"] + \
+                         sample_dict["beta"][..., 2] * sample_dict["arsenic"] + \
+                         sample_dict["beta"][..., 3] * sample_dict["educ4"]
+                sample_dict["switched"] = self.r_obs("switched",
+                                                    dist.Bernoulli(logits=logits),
+                                                    obs=sample_dict.get("switched", None))
+        return sample_dict
+
+
+class ARM_wells_dist(BaseVAEwRegister):
+    x_dim = 100
+    theta_dim = 2
+
+    def get_plates(self, batch_size, sample_dict):
+        return {
+            "plate_batch": self.plate("plate_batch", batch_size, dim=-1),
+            "plate_n": self.plate("plate_n", sample_dict["N"], dim=-2),
+        }
+
+    def model(self, batch_size, sample_dict):
+        if sample_dict is None:
+            sample_dict = SampleDict()
+            with MetaDataContext(sample_dict, self):
+                sample_dict["N"] = 50
+            with DataContext(sample_dict, self):
+                sample_dict["dist_"] = torch.rand(sample_dict["N"], batch_size, device=self.device) * 100
+        else:
+            sample_dict = copy.copy(sample_dict)
+
+        plates = self.get_plates(batch_size, sample_dict)
+        with plates["plate_batch"]:
+            sample_dict["beta"] = self.r_sample("beta", dist.Normal(torch.zeros((2, ), device=self.device),
+                                                                    torch.ones((2, ), device=self.device) * 0.2).to_event(1))
+            with plates["plate_n"]:
+                logits = sample_dict["beta"][..., 0] + \
+                         sample_dict["beta"][..., 1] * sample_dict["dist_"]
+                sample_dict["switched"] = self.r_obs("switched",
+                                                    dist.Bernoulli(logits=logits),
+                                                    obs=sample_dict.get("switched", None))
+        return sample_dict
+
+
+class ARM_wells_dist100(BaseVAEwRegister):
+    x_dim = 100
+    theta_dim = 2
+
+    def get_plates(self, batch_size, sample_dict):
+        return {
+            "plate_batch": self.plate("plate_batch", batch_size, dim=-1),
+            "plate_n": self.plate("plate_n", sample_dict["N"], dim=-2),
+        }
+
+    def model(self, batch_size, sample_dict):
+        if sample_dict is None:
+            sample_dict = SampleDict()
+            with MetaDataContext(sample_dict, self):
+                sample_dict["N"] = 50
+            with DataContext(sample_dict, self):
+                dist_ = torch.rand(sample_dict["N"], batch_size, device=self.device) * 100
+                sample_dict["dist100"] = dist_ / 100
+        else:
+            sample_dict = copy.copy(sample_dict)
+
+        plates = self.get_plates(batch_size, sample_dict)
+        with plates["plate_batch"]:
+            sample_dict["beta"] = self.r_sample("beta", dist.Normal(torch.zeros((2, ), device=self.device),
+                                                                    torch.ones((2, ), device=self.device) * 0.2).to_event(1))
+            with plates["plate_n"]:
+                logits = sample_dict["beta"][..., 0] + \
+                         sample_dict["beta"][..., 1] * sample_dict["dist100"]
+                sample_dict["switched"] = self.r_obs("switched",
+                                                    dist.Bernoulli(logits=logits),
+                                                    obs=sample_dict.get("switched", None))
+        return sample_dict
+
+
+class ARM_wells_interaction_c(BaseVAEwRegister):
+    x_dim = 200
+    theta_dim = 4
+
+    def get_plates(self, batch_size, sample_dict):
+        return {
+            "plate_batch": self.plate("plate_batch", batch_size, dim=-1),
+            "plate_n": self.plate("plate_n", sample_dict["N"], dim=-2),
+        }
+
+    def model(self, batch_size, sample_dict):
+        if sample_dict is None:
+            sample_dict = SampleDict()
+            with MetaDataContext(sample_dict, self):
+                sample_dict["N"] = 50
+            with DataContext(sample_dict, self):
+                dist_ = torch.rand(sample_dict["N"], batch_size, device=self.device) * 100
+                arsenic = torch.rand(sample_dict["N"], batch_size, device=self.device) * 10 + 1
+                sample_dict["c_dist100"] = (dist_ - torch.mean(dist_, dim=0)) / 100
+                sample_dict["c_arsenic"] = arsenic - torch.mean(arsenic, dim=0)
+                sample_dict["inter"] = sample_dict["c_dist100"] * sample_dict["c_arsenic"]
+        else:
+            sample_dict = copy.copy(sample_dict)
+
+        plates = self.get_plates(batch_size, sample_dict)
+        with plates["plate_batch"]:
+            sample_dict["beta"] = self.r_sample("beta", dist.Normal(torch.zeros((4, ), device=self.device),
+                                                                    torch.ones((4, ), device=self.device) * 0.2).to_event(1))
+            with plates["plate_n"]:
+                logits = sample_dict["beta"][..., 0] + \
+                         sample_dict["beta"][..., 1] * sample_dict["c_dist100"] + \
+                         sample_dict["beta"][..., 2] * sample_dict["c_arsenic"] + \
+                         sample_dict["beta"][..., 3] * sample_dict["inter"]
+                sample_dict["switched"] = self.r_obs("switched",
+                                                    dist.Bernoulli(logits=logits),
+                                                    obs=sample_dict.get("switched", None))
+        return sample_dict
+
+
+class ARM_wells_interaction(BaseVAEwRegister):
+    x_dim = 200
+    theta_dim = 4
+
+    def get_plates(self, batch_size, sample_dict):
+        return {
+            "plate_batch": self.plate("plate_batch", batch_size, dim=-1),
+            "plate_n": self.plate("plate_n", sample_dict["N"], dim=-2),
+        }
+
+    def model(self, batch_size, sample_dict):
+        if sample_dict is None:
+            sample_dict = SampleDict()
+            with MetaDataContext(sample_dict, self):
+                sample_dict["N"] = 50
+            with DataContext(sample_dict, self):
+                sample_dict["dist_"] = torch.rand(sample_dict["N"], batch_size, device=self.device) * 100
+                sample_dict["arsenic"] = torch.rand(sample_dict["N"], batch_size, device=self.device) * 10 + 1
+                sample_dict["inter"] = sample_dict["dist_"] * sample_dict["arsenic"]
+        else:
+            sample_dict = copy.copy(sample_dict)
+
+        plates = self.get_plates(batch_size, sample_dict)
+        with plates["plate_batch"]:
+            sample_dict["beta"] = self.r_sample("beta", dist.Normal(torch.zeros((4, ), device=self.device),
+                                                                    torch.ones((4, ), device=self.device) * 0.2).to_event(1))
+            with plates["plate_n"]:
+                logits = sample_dict["beta"][..., 0] + \
+                         sample_dict["beta"][..., 1] * sample_dict["dist_"] + \
+                         sample_dict["beta"][..., 2] * sample_dict["arsenic"] + \
+                         sample_dict["beta"][..., 3] * sample_dict["inter"]
+                sample_dict["switched"] = self.r_obs("switched",
+                                                    dist.Bernoulli(logits=logits),
+                                                    obs=sample_dict.get("switched", None))
+        return sample_dict
+
+
+class ARM_wells_logit(BaseVAEwRegister):
+    x_dim = 100
+    theta_dim = 2
+
+    def get_plates(self, batch_size, sample_dict):
+        return {
+            "plate_batch": self.plate("plate_batch", batch_size, dim=-1),
+            "plate_n": self.plate("plate_n", sample_dict["N"], dim=-2),
+        }
+
+    def model(self, batch_size, sample_dict):
+        if sample_dict is None:
+            sample_dict = SampleDict()
+            with MetaDataContext(sample_dict, self):
+                sample_dict["N"] = 50
+            with DataContext(sample_dict, self):
+                dist_ = torch.rand(sample_dict["N"], batch_size, device=self.device) * 100
+                sample_dict["dist100"] = dist_ / 100
+        else:
+            sample_dict = copy.copy(sample_dict)
+
+        plates = self.get_plates(batch_size, sample_dict)
+        with plates["plate_batch"]:
+            sample_dict["beta"] = self.r_sample("beta", dist.Normal(torch.zeros((2, ), device=self.device),
+                                                                    torch.ones((2, ), device=self.device) * 0.2).to_event(1))
+            with plates["plate_n"]:
+                logits = sample_dict["beta"][..., 0] + \
+                         sample_dict["beta"][..., 1] * sample_dict["dist100"]
+                sample_dict["switched"] = self.r_obs("switched",
+                                                    dist.Bernoulli(logits=logits),
+                                                    obs=sample_dict.get("switched", None))
+        return sample_dict
+
+
+class ARM_wells_predicted(ARM_wells_dae_inter_c):
+    pass
+
+
+class ARM_wells_probit(BaseVAEwRegister):
+    x_dim = 100
+    theta_dim = 2
+
+    def get_plates(self, batch_size, sample_dict):
+        return {
+            "plate_batch": self.plate("plate_batch", batch_size, dim=-1),
+            "plate_n": self.plate("plate_n", sample_dict["N"], dim=-2),
+        }
+
+    def model(self, batch_size, sample_dict):
+        if sample_dict is None:
+            sample_dict = SampleDict()
+            with MetaDataContext(sample_dict, self):
+                sample_dict["N"] = 50
+            with DataContext(sample_dict, self):
+                dist_ = torch.rand(sample_dict["N"], batch_size, device=self.device) * 100
+                sample_dict["dist100"] = dist_ / 100
+        else:
+            sample_dict = copy.copy(sample_dict)
+
+        plates = self.get_plates(batch_size, sample_dict)
+        with plates["plate_batch"]:
+            sample_dict["beta"] = self.r_sample("beta", dist.Normal(torch.zeros((2, ), device=self.device),
+                                                                    torch.ones((2, ), device=self.device) * 0.2).to_event(1))
+            with plates["plate_n"]:
+                phi = self.scalar_normal_dist(0.0, 1.0).cdf
+                logits = phi(sample_dict["beta"][..., 0] + \
+                             sample_dict["beta"][..., 1] * sample_dict["dist100"])
+                sample_dict["switched"] = self.r_obs("switched",
+                                                    dist.Bernoulli(logits=logits),
+                                                    obs=sample_dict.get("switched", None))
+        return sample_dict
+
+
+class ARM_wells(BaseVAEwRegister):
+    x_dim = 100
+    theta_dim = 2
+
+    def get_plates(self, batch_size, sample_dict):
+        return {
+            "plate_batch": self.plate("plate_batch", batch_size, dim=-1),
+            "plate_n": self.plate("plate_n", sample_dict["N"], dim=-2),
+        }
+
+    def model(self, batch_size, sample_dict):
+        if sample_dict is None:
+            sample_dict = SampleDict()
+            with MetaDataContext(sample_dict, self):
+                sample_dict["N"] = 50
+            with DataContext(sample_dict, self):
+                sample_dict["dist_"] = torch.rand(sample_dict["N"], batch_size, device=self.device) * 100
+        else:
+            sample_dict = copy.copy(sample_dict)
+
+        plates = self.get_plates(batch_size, sample_dict)
+        with plates["plate_batch"]:
+            sample_dict["beta"] = self.r_sample("beta", dist.Normal(torch.zeros((2, ), device=self.device),
+                                                                    torch.ones((2, ), device=self.device) * 0.2).to_event(1))
+            with plates["plate_n"]:
+                logits = sample_dict["beta"][..., 0] + \
+                         sample_dict["beta"][..., 1] * sample_dict["dist_"]
+                sample_dict["switched"] = self.r_obs("switched",
+                                                    dist.Bernoulli(logits=logits),
+                                                    obs=sample_dict.get("switched", None))
+        return sample_dict
+
+
+class ARM_y_x(BaseVAEwRegister):
+    x_dim = 100
+    theta_dim = 2
+
+    def get_plates(self, batch_size, sample_dict):
+        return {
+            "plate_batch": self.plate("plate_batch", batch_size, dim=-1),
+            "plate_n": self.plate("plate_n", sample_dict["N"], dim=-2),
+        }
+
+    def model(self, batch_size, sample_dict):
+        if sample_dict is None:
+            sample_dict = SampleDict()
+            with MetaDataContext(sample_dict, self):
+                sample_dict["N"] = 50
+            with DataContext(sample_dict, self):
+                sample_dict["x"] = torch.randn(sample_dict["N"], batch_size, device=self.device)
+        else:
+            sample_dict = copy.copy(sample_dict)
+
+        plates = self.get_plates(batch_size, sample_dict)
+        with plates["plate_batch"]:
+            sample_dict["beta"] = self.r_sample("beta", dist.Normal(torch.zeros((2, ), device=self.device),
+                                                                    torch.ones((2, ), device=self.device) * 0.2).to_event(1))
+            with plates["plate_n"]:
+                y_hat = sample_dict["beta"][..., 0] + \
+                        sample_dict["beta"][..., 1] * sample_dict["x"]
+                sample_dict["y"] = self.r_obs("y",
+                                            dist.Normal(y_hat,
+                                                        torch.ones_like(y_hat) * 0.1),
+                                            obs=sample_dict.get("y", None))
+        return sample_dict
