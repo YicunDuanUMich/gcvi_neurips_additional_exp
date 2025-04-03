@@ -4884,3 +4884,319 @@ class ARM_y_x(BaseVAEwRegister):
                                                         torch.ones_like(y_hat) * 0.1),
                                             obs=sample_dict.get("y", None))
         return sample_dict
+
+
+class BUGS_beatles_probit(BaseVAEwRegister):
+    x_dim = 100
+    theta_dim = 2
+
+    def get_plates(self, batch_size, sample_dict):
+        return {
+            "plate_batch": self.plate("plate_batch", batch_size, dim=-1),
+            "plate_n": self.plate("plate_n", sample_dict["N"], dim=-2),
+        }
+
+    def model(self, batch_size, sample_dict):
+        if sample_dict is None:
+            sample_dict = SampleDict()
+            with MetaDataContext(sample_dict, self):
+                sample_dict["N"] = 50
+                sample_dict["n"] = 100
+            with DataContext(sample_dict, self):
+                sample_dict["centered_x"] = torch.randn(sample_dict["N"], batch_size, device=self.device)
+        else:
+            sample_dict = copy.copy(sample_dict)
+
+        plates = self.get_plates(batch_size, sample_dict)
+        with plates["plate_batch"]:
+            sample_dict["alpha_star"] = self.r_sample("alpha_star", self.scalar_normal_dist(0.0, 1.0))
+            sample_dict["beta"] = self.r_sample("beta", self.scalar_normal_dist(0.0, 10000.0))
+            with plates["plate_n"]:
+                p = self.scalar_normal_dist(0.0, 1.0).cdf(sample_dict["alpha_star"] + sample_dict["beta"] * sample_dict["centered_x"])
+                sample_dict["r"] = self.r_obs("r",
+                                            dist.Binomial(sample_dict["n"], p),
+                                            obs=sample_dict.get("r", None))
+        return sample_dict
+
+
+class BUGS_dyes(BaseVAEwRegister):
+    x_dim = 50
+    theta_dim = 2
+
+    def get_plates(self, batch_size, sample_dict):
+        return {
+            "plate_batch": self.plate("plate_batch", batch_size, dim=-1),
+            "plate_n": self.plate("plate_n", sample_dict["N"], dim=-2),
+        }
+
+    def model(self, batch_size, sample_dict):
+        if sample_dict is None:
+            sample_dict = SampleDict()
+            with MetaDataContext(sample_dict, self):
+                sample_dict["N"] = 50
+            with DataContext(sample_dict, self):
+                pass
+        else:
+            sample_dict = copy.copy(sample_dict)
+
+        plates = self.get_plates(batch_size, sample_dict)
+        with plates["plate_batch"]:
+            sample_dict["theta"] = self.r_sample("theta", self.scalar_normal_dist(0.0, 1e5))
+            sample_dict["mu"] = self.r_sample("mu", dist.Normal(sample_dict["theta"],
+                                                                torch.ones_like(sample_dict["theta"]) * 1000))
+            with plates["plate_n"]:
+                sample_dict["y"] = self.r_obs("y",
+                                            dist.Normal(sample_dict["mu"],
+                                                        torch.ones_like(sample_dict["mu"]) * 20),
+                                            obs=sample_dict.get("y", None))
+        return sample_dict
+
+
+class BUGS_lsat(BaseVAEwRegister):
+    x_dim = 150
+    theta_dim = 3
+
+    def get_plates(self, batch_size, sample_dict):
+        return {
+            "plate_batch": self.plate("plate_batch", batch_size, dim=-1),
+            "plate_n": self.plate("plate_n", sample_dict["N"], dim=-2),
+            "plate_t": self.plate("plate_t", sample_dict["T"], dim=-3)
+        }
+
+    def model(self, batch_size, sample_dict):
+        if sample_dict is None:
+            sample_dict = SampleDict()
+            with MetaDataContext(sample_dict, self):
+                sample_dict["N"] = 50
+                sample_dict["T"] = 3
+            with DataContext(sample_dict, self):
+                pass
+        else:
+            sample_dict = copy.copy(sample_dict)
+
+        plates = self.get_plates(batch_size, sample_dict)
+        with plates["plate_batch"]:
+            sample_dict["alpha"] = self.r_sample("alpha", self.scalar_normal_dist(0.0, 100.0))
+            sample_dict["theta"] = self.r_sample("theta", self.scalar_normal_dist(0.0, 1.0))
+            sample_dict["beta"] = self.r_sample("beta", self.scalar_normal_dist(0.0, 100.0))
+            with plates["plate_n"], plates["plate_t"]:
+                sample_dict["r"] = self.r_obs("r",
+                                            dist.Bernoulli(logits=sample_dict["beta"] * sample_dict["theta"] - sample_dict["alpha"]),
+                                            obs=sample_dict.get("r", None))
+        return sample_dict
+
+
+class MISC_irt_multilevel(BaseVAEwRegister):
+    x_dim = 50
+    theta_dim = 8
+
+    def get_plates(self, batch_size, sample_dict):
+        return {
+            "plate_batch": self.plate("plate_batch", batch_size, dim=-1),
+            "plate_n": self.plate("plate_n", sample_dict["N"], dim=-2),
+            "plate_alpha": self.plate("plate_alpha", sample_dict["n_alpha"], dim=-2),
+            "plate_beta": self.plate("plate_beta", sample_dict["n_beta"], dim=-2),
+        }
+
+    def model(self, batch_size, sample_dict):
+        if sample_dict is None:
+            sample_dict = SampleDict()
+            with MetaDataContext(sample_dict, self):
+                sample_dict["N"] = 50
+                sample_dict["n_alpha"] = 2
+                sample_dict["n_beta"] = 5
+                total_permutate = sample_dict["n_alpha"] * sample_dict["n_beta"]
+                assert sample_dict["N"] % total_permutate == 0
+                r = sample_dict["N"] // total_permutate
+                alpha_beta_mesh = torch.stack(
+                    torch.meshgrid(torch.arange(sample_dict["n_alpha"], device=self.device),
+                                   torch.arange(sample_dict["n_beta"], device=self.device),
+                                   indexing="ij"),
+                dim=-1)
+                sample_dict["alpha_order"] = repeat(alpha_beta_mesh[..., 0].reshape(-1),
+                                                    "k -> (r k)", r=r)
+                sample_dict["beta_order"] = repeat(alpha_beta_mesh[..., 1].reshape(-1),
+                                                   "k -> (r k)", r=r)
+            with DataContext(sample_dict, self):
+                pass
+        else:
+            sample_dict = copy.copy(sample_dict)
+
+        plates = self.get_plates(batch_size, sample_dict)
+        with plates["plate_batch"]:
+            with plates["plate_alpha"]:
+                sample_dict["alpha"] = self.r_sample("alpha", self.scalar_normal_dist(0.0, 10.0))
+            with plates["plate_beta"]:
+                sample_dict["beta"] = self.r_sample("beta", self.scalar_normal_dist(0.0, 5.0))
+            sample_dict["delta"] = self.r_sample("delta", self.scalar_normal_dist(0.75, 1.0))
+            with plates["plate_n"]:
+                logits = sample_dict["alpha"][..., sample_dict["alpha_order"], :] - \
+                         sample_dict["beta"][..., sample_dict["beta_order"], :] + \
+                         sample_dict["delta"]
+                sample_dict["y"] = self.r_obs("y",
+                                            dist.Bernoulli(logits=logits),
+                                            obs=sample_dict.get("y", None))
+        return sample_dict
+
+
+class MISC_irt(BaseVAEwRegister):
+    x_dim = 50
+    theta_dim = 8
+
+    def get_plates(self, batch_size, sample_dict):
+        return {
+            "plate_batch": self.plate("plate_batch", batch_size, dim=-1),
+            "plate_n": self.plate("plate_n", sample_dict["N"], dim=-2),
+            "plate_alpha": self.plate("plate_alpha", sample_dict["n_alpha"], dim=-2),
+            "plate_beta": self.plate("plate_beta", sample_dict["n_beta"], dim=-2),
+        }
+
+    def model(self, batch_size, sample_dict):
+        if sample_dict is None:
+            sample_dict = SampleDict()
+            with MetaDataContext(sample_dict, self):
+                sample_dict["N"] = 50
+                sample_dict["n_alpha"] = 2
+                sample_dict["n_beta"] = 5
+                total_permutate = sample_dict["n_alpha"] * sample_dict["n_beta"]
+                assert sample_dict["N"] % total_permutate == 0
+                r = sample_dict["N"] // total_permutate
+                alpha_beta_mesh = torch.stack(
+                    torch.meshgrid(torch.arange(sample_dict["n_alpha"], device=self.device),
+                                   torch.arange(sample_dict["n_beta"], device=self.device),
+                                   indexing="ij"),
+                dim=-1)
+                sample_dict["alpha_order"] = repeat(alpha_beta_mesh[..., 0].reshape(-1),
+                                                    "k -> (r k)", r=r)
+                sample_dict["beta_order"] = repeat(alpha_beta_mesh[..., 1].reshape(-1),
+                                                   "k -> (r k)", r=r)
+            with DataContext(sample_dict, self):
+                pass
+        else:
+            sample_dict = copy.copy(sample_dict)
+
+        plates = self.get_plates(batch_size, sample_dict)
+        with plates["plate_batch"]:
+            with plates["plate_alpha"]:
+                sample_dict["alpha"] = self.r_sample("alpha", self.scalar_normal_dist(0.0, 1.0))
+            with plates["plate_beta"]:
+                sample_dict["beta"] = self.r_sample("beta", self.scalar_normal_dist(0.0, 1.0))
+            sample_dict["delta"] = self.r_sample("delta", self.scalar_normal_dist(0.75, 1.0))
+            with plates["plate_n"]:
+                logits = sample_dict["alpha"][..., sample_dict["alpha_order"], :] - \
+                         sample_dict["beta"][..., sample_dict["beta_order"], :] + \
+                         sample_dict["delta"]
+                sample_dict["y"] = self.r_obs("y",
+                                            dist.Bernoulli(logits=logits),
+                                            obs=sample_dict.get("y", None))
+        return sample_dict
+
+
+class MISC_irt2_multilevel(BaseVAEwRegister):
+    x_dim = 50
+    theta_dim = 13
+
+    def get_plates(self, batch_size, sample_dict):
+        return {
+            "plate_batch": self.plate("plate_batch", batch_size, dim=-1),
+            "plate_n": self.plate("plate_n", sample_dict["N"], dim=-2),
+            "plate_alpha": self.plate("plate_alpha", sample_dict["n_alpha"], dim=-2),
+            "plate_beta": self.plate("plate_beta", sample_dict["n_beta"], dim=-2),
+        }
+
+    def model(self, batch_size, sample_dict):
+        if sample_dict is None:
+            sample_dict = SampleDict()
+            with MetaDataContext(sample_dict, self):
+                sample_dict["N"] = 50
+                sample_dict["n_alpha"] = 2
+                sample_dict["n_beta"] = 5
+                total_permutate = sample_dict["n_alpha"] * sample_dict["n_beta"]
+                assert sample_dict["N"] % total_permutate == 0
+                r = sample_dict["N"] // total_permutate
+                alpha_beta_mesh = torch.stack(
+                    torch.meshgrid(torch.arange(sample_dict["n_alpha"], device=self.device),
+                                   torch.arange(sample_dict["n_beta"], device=self.device),
+                                   indexing="ij"),
+                dim=-1)
+                sample_dict["alpha_order"] = repeat(alpha_beta_mesh[..., 0].reshape(-1),
+                                                    "k -> (r k)", r=r)
+                sample_dict["beta_order"] = repeat(alpha_beta_mesh[..., 1].reshape(-1),
+                                                   "k -> (r k)", r=r)
+            with DataContext(sample_dict, self):
+                pass
+        else:
+            sample_dict = copy.copy(sample_dict)
+
+        plates = self.get_plates(batch_size, sample_dict)
+        with plates["plate_batch"]:
+            with plates["plate_alpha"]:
+                sample_dict["alpha"] = self.r_sample("alpha", self.scalar_normal_dist(0.0, 1.0))
+            with plates["plate_beta"]:
+                sample_dict["beta"] = self.r_sample("beta", self.scalar_normal_dist(0.0, 1.0))
+                sample_dict["log_gamma"] = self.r_sample("log_gamma", self.scalar_normal_dist(0.0, 0.5))
+            sample_dict["delta"] = self.r_sample("delta", self.scalar_normal_dist(0.75, 1.0))
+            with plates["plate_n"]:
+                logits = sample_dict["log_gamma"][..., sample_dict["beta_order"], :].exp() * \
+                        (sample_dict["alpha"][..., sample_dict["alpha_order"], :] - \
+                         sample_dict["beta"][..., sample_dict["beta_order"], :] + \
+                         sample_dict["delta"])
+                sample_dict["y"] = self.r_obs("y",
+                                            dist.Bernoulli(logits=logits),
+                                            obs=sample_dict.get("y", None))
+        return sample_dict
+
+
+class MISC_irt2(BaseVAEwRegister):
+    x_dim = 50
+    theta_dim = 13
+
+    def get_plates(self, batch_size, sample_dict):
+        return {
+            "plate_batch": self.plate("plate_batch", batch_size, dim=-1),
+            "plate_n": self.plate("plate_n", sample_dict["N"], dim=-2),
+            "plate_alpha": self.plate("plate_alpha", sample_dict["n_alpha"], dim=-2),
+            "plate_beta": self.plate("plate_beta", sample_dict["n_beta"], dim=-2),
+        }
+
+    def model(self, batch_size, sample_dict):
+        if sample_dict is None:
+            sample_dict = SampleDict()
+            with MetaDataContext(sample_dict, self):
+                sample_dict["N"] = 50
+                sample_dict["n_alpha"] = 2
+                sample_dict["n_beta"] = 5
+                total_permutate = sample_dict["n_alpha"] * sample_dict["n_beta"]
+                assert sample_dict["N"] % total_permutate == 0
+                r = sample_dict["N"] // total_permutate
+                alpha_beta_mesh = torch.stack(
+                    torch.meshgrid(torch.arange(sample_dict["n_alpha"], device=self.device),
+                                   torch.arange(sample_dict["n_beta"], device=self.device),
+                                   indexing="ij"),
+                dim=-1)
+                sample_dict["alpha_order"] = repeat(alpha_beta_mesh[..., 0].reshape(-1),
+                                                    "k -> (r k)", r=r)
+                sample_dict["beta_order"] = repeat(alpha_beta_mesh[..., 1].reshape(-1),
+                                                   "k -> (r k)", r=r)
+            with DataContext(sample_dict, self):
+                pass
+        else:
+            sample_dict = copy.copy(sample_dict)
+
+        plates = self.get_plates(batch_size, sample_dict)
+        with plates["plate_batch"]:
+            with plates["plate_alpha"]:
+                sample_dict["alpha"] = self.r_sample("alpha", self.scalar_normal_dist(0.0, 1.0))
+            with plates["plate_beta"]:
+                sample_dict["beta"] = self.r_sample("beta", self.scalar_normal_dist(0.0, 1.0))
+                sample_dict["log_gamma"] = self.r_sample("log_gamma", self.scalar_normal_dist(0.0, 1.0))
+            sample_dict["delta"] = self.r_sample("delta", self.scalar_normal_dist(0.75, 1.0))
+            with plates["plate_n"]:
+                logits = sample_dict["log_gamma"][..., sample_dict["beta_order"], :].exp() * \
+                        (sample_dict["alpha"][..., sample_dict["alpha_order"], :] - \
+                         sample_dict["beta"][..., sample_dict["beta_order"], :] + \
+                         sample_dict["delta"])
+                sample_dict["y"] = self.r_obs("y",
+                                            dist.Bernoulli(logits=logits),
+                                            obs=sample_dict.get("y", None))
+        return sample_dict

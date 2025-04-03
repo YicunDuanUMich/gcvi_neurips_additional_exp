@@ -130,7 +130,14 @@ from pyro_cases.model import (GaussianLinearVAE,
                               ARM_wells_predicted,
                               ARM_wells_probit,
                               ARM_wells,
-                              ARM_y_x)
+                              ARM_y_x,
+                              BUGS_beatles_probit,
+                              BUGS_dyes,
+                              BUGS_lsat,
+                              MISC_irt_multilevel,
+                              MISC_irt,
+                              MISC_irt2_multilevel,
+                              MISC_irt2)
 
 vae_dict: Dict[str, BaseVAE] = {
     "gaussian_linear": GaussianLinearVAE,
@@ -243,6 +250,13 @@ vae_dict: Dict[str, BaseVAE] = {
     "arm_wells_probit": ARM_wells_probit,
     "arm_wells": ARM_wells,
     "arm_y_x": ARM_y_x,
+    "bugs_beatles_probit": BUGS_beatles_probit,
+    "bugs_dyes": BUGS_dyes,
+    "bugs_lsat": BUGS_lsat,
+    "misc_irt_multilevel": MISC_irt_multilevel,
+    "misc_irt": MISC_irt,
+    "misc_irt2_multilevel": MISC_irt2_multilevel,
+    "misc_irt2": MISC_irt2,
 }
 
 class NullScheduler:
