@@ -17,10 +17,10 @@ def my_worker(kwargs):
 def process_task(tags, task_params_nested_list, least_tasks_per_chunk):
     results = []
     merged_task_params_list = sum(task_params_nested_list, [])  # flatten the nested list
-    chunk_size = len(task_params_nested_list[0])
+    repeat_times = len(task_params_nested_list[0])
     total_sub_tasks = len(merged_task_params_list)
     assert total_sub_tasks >= least_tasks_per_chunk
-    assert all([len(tl) == chunk_size for tl in task_params_nested_list])  # assert equal length
+    assert all([len(tl) == repeat_times for tl in task_params_nested_list])  # assert equal length
     assert total_sub_tasks % len(tags) == 0
     boundaries = list(range(0, total_sub_tasks, least_tasks_per_chunk)) + [total_sub_tasks]
     slices = list(zip(boundaries[:-1], boundaries[1:]))
@@ -39,7 +39,7 @@ def process_task(tags, task_params_nested_list, least_tasks_per_chunk):
         end_date = time.ctime()
         print_blue(f"tag {tags} [{rs}/{total_sub_tasks}]: end at {end_date}")
         print_blue(f"tag {tags} [{rs}/{total_sub_tasks}]: take {end_time - start_time:.1f} seconds")
-    return [results[i:(i + chunk_size)] for i in range(0, len(results), chunk_size)]
+    return [results[i:(i + repeat_times)] for i in range(0, len(results), repeat_times)]
 
 @click.command()
 @click.option("--save-path", type=str, help="path to output file")
