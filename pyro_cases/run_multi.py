@@ -14,11 +14,15 @@ from pyro_cases.run import train_and_test, vae_dict
 def my_worker(kwargs):
     return train_and_test(**kwargs)
 
-def process_task(tag, task_param_dict_list, device_count, max_processes_per_gpu):
+def process_task(tags, task_params_nested_list, least_tasks_per_chunk):
     results = []
-    total_processes = device_count * max_processes_per_gpu
-    total_sub_tasks = len(task_param_dict_list)
-    boundaries = list(range(0, total_sub_tasks, total_processes)) + [total_sub_tasks]
+    merged_task_params_list = sum(task_params_nested_list, [])  # flatten the nested list
+    chunk_size = len(task_params_nested_list[0])
+    total_sub_tasks = len(merged_task_params_list)
+    assert total_sub_tasks >= least_tasks_per_chunk
+    assert all([len(tl) == chunk_size for tl in task_params_nested_list])  # assert equal length
+    assert total_sub_tasks % len(tags) == 0
+    boundaries = list(range(0, total_sub_tasks, least_tasks_per_chunk)) + [total_sub_tasks]
     slices = list(zip(boundaries[:-1], boundaries[1:]))
     print_blue = lambda x: print(colored(x, "blue"))
     for ls, rs in slices:
@@ -28,20 +32,21 @@ def process_task(tag, task_param_dict_list, device_count, max_processes_per_gpu)
         # don't use them
         start_time = time.time()
         start_date = time.ctime()
-        print_blue(f"tag {tag} [{rs}/{total_sub_tasks}]: start at {start_date}")
-        with multiprocessing.Pool(processes=total_processes) as p:
-            results.extend(p.map(my_worker, task_param_dict_list[ls:rs]))
+        print_blue(f"tag {tags} [{rs}/{total_sub_tasks}]: start at {start_date}")
+        with multiprocessing.Pool(processes=least_tasks_per_chunk) as p:
+            results.extend(p.map(my_worker, merged_task_params_list[ls:rs]))
         end_time = time.time()
         end_date = time.ctime()
-        print_blue(f"tag {tag} [{rs}/{total_sub_tasks}]: end at {end_date}")
-        print_blue(f"tag {tag} [{rs}/{total_sub_tasks}]: take {end_time - start_time:.1f} seconds")
-    return results
+        print_blue(f"tag {tags} [{rs}/{total_sub_tasks}]: end at {end_date}")
+        print_blue(f"tag {tags} [{rs}/{total_sub_tasks}]: take {end_time - start_time:.1f} seconds")
+    return [results[i:(i + chunk_size)] for i in range(0, len(results), chunk_size)]
 
 @click.command()
 @click.option("--save-path", type=str, help="path to output file")
 @click.option("--cuda-idx", type=str, help="cuda devices")
-def main(save_path, cuda_idx):
-    model_num = 100
+@click.option("--repeat-times", type=int)
+@click.option("--max-processes-per-gpu", type=int, default=4)
+def main(save_path, cuda_idx, repeat_times, max_processes_per_gpu):
     task_names = list(vae_dict.keys())
     lr_schedulers = ["cosine_annealing"]
     network_widths = [1024]
@@ -50,7 +55,8 @@ def main(save_path, cuda_idx):
         cuda_devices = [f"cuda:{i}" for i in range(torch.cuda.device_count())]
     else:
         cuda_devices = [f"cuda:{i}" for i in cuda_idx.split(",")]
-    max_processes_per_gpu = 4
+    assert repeat_times % len(cuda_devices) == 0
+    least_tasks_per_chunk = len(cuda_devices) * max_processes_per_gpu
 
     print_green = lambda x: print(colored(x, "green"))
     print_green("+" * 100)
@@ -73,12 +79,12 @@ def main(save_path, cuda_idx):
     tasks = {t: [] for t, _ in task_tags}
     for t, (tn, lr_s, network_width) in task_tags:
         assert tn in vae_dict
-        for model_i in range(model_num):
-            device = torch.device(cuda_devices[model_i % len(cuda_devices)])
+        for ri in range(repeat_times):
+            device = torch.device(cuda_devices[ri % len(cuda_devices)])
             tasks[t].append(
                 {
                     "task_name": tn,
-                    "seed": random.Random(1234 + model_i).randint(10_000, 100_000 - 1),
+                    "seed": random.Random(1234 + ri).randint(10_000, 100_000 - 1),
                     "device": device,
                     "lr": 1e-3,
                     "lr_schedule": lr_s,
@@ -93,21 +99,36 @@ def main(save_path, cuda_idx):
                     "vsbc_n_obs": 1000,
                     "show_progress": False,
                     "silent": True,
+                    "return_vae": False,
+                    "suppress_error": True,
                 }
             )
     
+    withhold_ts = []
+    withhold_t_params = []
+    withhold_t_param_num = 0
+    withhold_save_files = []
     for t, task_param_dict_list in tasks.items():
-        print_green(f"processing tag {t}")
-        save_t_file_path = save_path / f"pyro_{t}_mn_{model_num}.pt"
-        if not save_t_file_path.exists():
-            t_result = process_task(t, task_param_dict_list, len(cuda_devices), max_processes_per_gpu)
-            torch.save(t_result, save_t_file_path)
-            del t_result
-            gc.collect()
-        else:
-            print_green(f"find {save_t_file_path}")
-        print_green(f"tag {t} completes")
-    
+        save_t_file_path = save_path / f"pyro_{t}_mn_{repeat_times}.pt"
+        if save_t_file_path.exists():
+            print_green(f"find {save_t_file_path}; skip this task")
+            continue
+        withhold_ts.append(t)
+        withhold_t_params.append(task_param_dict_list)
+        withhold_t_param_num += len(task_param_dict_list)
+        withhold_save_files.append(save_t_file_path)
+        if withhold_t_param_num < least_tasks_per_chunk:
+            continue
+        results = process_task(withhold_ts, withhold_t_params, least_tasks_per_chunk)
+        for cur_result, cur_save_file_path in zip(results, withhold_save_files, strict=True):
+            torch.save(cur_result, cur_save_file_path)
+        del results
+        withhold_ts = []
+        withhold_t_params = []
+        withhold_t_param_num = 0
+        withhold_save_files = []
+        gc.collect()
+
     print_green("done")
 
 

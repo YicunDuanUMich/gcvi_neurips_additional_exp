@@ -4,7 +4,6 @@ from torch import optim
 import random
 import numpy as np
 import time
-import torch.utils
 import tqdm
 import copy
 import click
@@ -392,7 +391,9 @@ def train_and_test(task_name,
     favi_training_loss = []
     iterations = range(steps) if not show_progress else tqdm.tqdm(list(range(steps)))
     elbo_cant_converge = False
+    elbo_error = ""
     favi_cant_converge = False
+    favi_error = ""
     if isinstance(vae, BaseVAEwRegister):
         vae.do_register(batch_size)
     for _ in iterations:
@@ -403,7 +404,9 @@ def train_and_test(task_name,
                     step_loss = svi.step(batch_size, sample_dict)
                     elbo_training_loss.append(step_loss)
             except Exception as e:
-                print(colored(f"get exception during ELBO training:\n {e}", "red"))
+                if not silent:
+                    print(colored(f"get exception during ELBO training:\n {e}", "red"))
+                elbo_error = str(e)
                 elbo_cant_converge = True
 
             try:
@@ -418,7 +421,9 @@ def train_and_test(task_name,
                     favi_scheduler.step()
                     favi_training_loss.append(favi_loss.item())
             except Exception as e:
-                print(colored(f"get exception during FAVI training:\n {e}", "red"))
+                if not silent:
+                    print(colored(f"get exception during FAVI training:\n {e}", "red"))
+                favi_error = str(e)
                 favi_cant_converge = True
         else:
             step_loss = svi.step(batch_size, sample_dict)
@@ -467,7 +472,10 @@ def train_and_test(task_name,
     task_end_time = time.ctime()
     end_time = time.time()
     if not silent:
-        print(f"[{seed} completes] task start time: {task_start_time}; task end time: {task_end_time}; cost time: {end_time - start_time:.1f} seconds")
+        print(f"[task {task_name} seed {seed} completes] " \
+              f"task start time: {task_start_time}; " \
+              f"task end time: {task_end_time}; " \
+              f"cost time: {end_time - start_time:.1f} seconds")
 
     return {
         "seed": seed,
@@ -482,6 +490,8 @@ def train_and_test(task_name,
         "favi_vsbc": favi_vsbc,
         "elbo_k_hat": elbo_k_hat,
         "elbo_vsbc": elbo_vsbc,
+        "elbo_error": elbo_error,
+        "favi_error": favi_error,
     }
 
 
