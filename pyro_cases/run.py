@@ -398,7 +398,7 @@ def train_and_test(task_name,
         sample_dict = vae.generate_sample_dict(batch_size=batch_size)
         if suppress_error:
             try:
-                if elbo_error is not None:
+                if elbo_error is None:
                     step_loss = svi.step(batch_size, sample_dict)
                     elbo_training_loss.append(step_loss)
             except Exception as e:
@@ -407,7 +407,7 @@ def train_and_test(task_name,
                 elbo_error = str(e)
 
             try:
-                if favi_error is not None:
+                if favi_error is None:
                     favi_optimizer.zero_grad()
                     favi_loss = favi_encoder.batch_favi_loss(vae.extract_theta(sample_dict), 
                                                             vae.extract_x(sample_dict))
@@ -439,7 +439,7 @@ def train_and_test(task_name,
     favi_vae_wrap = copy.deepcopy(vae)
     favi_vae_wrap.encoder = favi_encoder
 
-    if elbo_error is not None:
+    if elbo_error is None:
         elbo_vae = elbo_vae.eval()
         # direct
         elbo_test_dict_list = compare_ref_and_est(elbo_vae, num_obs=direct_compare_n_obs)
@@ -452,7 +452,7 @@ def train_and_test(task_name,
         elbo_k_hat = None
         elbo_vsbc = None
     
-    if favi_error is not None:
+    if favi_error is None:
         favi_vae_wrap = favi_vae_wrap.eval()
         # direct
         favi_test_dict_list = compare_ref_and_est(favi_vae_wrap, num_obs=direct_compare_n_obs)
