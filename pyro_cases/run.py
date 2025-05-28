@@ -390,27 +390,24 @@ def train_and_test(task_name,
     elbo_training_loss = []
     favi_training_loss = []
     iterations = range(steps) if not show_progress else tqdm.tqdm(list(range(steps)))
-    elbo_cant_converge = False
-    elbo_error = ""
-    favi_cant_converge = False
-    favi_error = ""
+    elbo_error = None
+    favi_error = None
     if isinstance(vae, BaseVAEwRegister):
         vae.do_register(batch_size)
     for _ in iterations:
         sample_dict = vae.generate_sample_dict(batch_size=batch_size)
         if suppress_error:
             try:
-                if not elbo_cant_converge:
+                if elbo_error is not None:
                     step_loss = svi.step(batch_size, sample_dict)
                     elbo_training_loss.append(step_loss)
             except Exception as e:
                 if not silent:
                     print(colored(f"get exception during ELBO training:\n {e}", "red"))
                 elbo_error = str(e)
-                elbo_cant_converge = True
 
             try:
-                if not favi_cant_converge:
+                if favi_error is not None:
                     favi_optimizer.zero_grad()
                     favi_loss = favi_encoder.batch_favi_loss(vae.extract_theta(sample_dict), 
                                                             vae.extract_x(sample_dict))
@@ -424,7 +421,6 @@ def train_and_test(task_name,
                 if not silent:
                     print(colored(f"get exception during FAVI training:\n {e}", "red"))
                 favi_error = str(e)
-                favi_cant_converge = True
         else:
             step_loss = svi.step(batch_size, sample_dict)
             elbo_training_loss.append(step_loss)
@@ -443,7 +439,7 @@ def train_and_test(task_name,
     favi_vae_wrap = copy.deepcopy(vae)
     favi_vae_wrap.encoder = favi_encoder
 
-    if not elbo_cant_converge:
+    if elbo_error is not None:
         elbo_vae = elbo_vae.eval()
         # direct
         elbo_test_dict_list = compare_ref_and_est(elbo_vae, num_obs=direct_compare_n_obs)
@@ -452,11 +448,11 @@ def train_and_test(task_name,
         # vsbc
         elbo_vsbc = get_vsbc(elbo_vae, num_obs=vsbc_n_obs).cpu()
     else:
-        elbo_test_dict_list = "elbo_cant_converge"
-        elbo_k_hat = "elbo_cant_converge"
-        elbo_vsbc = "elbo_cant_converge"
+        elbo_test_dict_list = None
+        elbo_k_hat = None
+        elbo_vsbc = None
     
-    if not favi_cant_converge:
+    if favi_error is not None:
         favi_vae_wrap = favi_vae_wrap.eval()
         # direct
         favi_test_dict_list = compare_ref_and_est(favi_vae_wrap, num_obs=direct_compare_n_obs)
@@ -465,10 +461,10 @@ def train_and_test(task_name,
         # vsbc
         favi_vsbc = get_vsbc(favi_vae_wrap, num_obs=vsbc_n_obs).cpu()
     else:
-        favi_test_dict_list = "favi_cant_converge"
-        favi_k_hat = "favi_cant_converge"
-        favi_vsbc = "favi_cant_converge"
-    
+        favi_test_dict_list = None
+        favi_k_hat = None
+        favi_vsbc = None
+
     task_end_time = time.ctime()
     end_time = time.time()
     if not silent:

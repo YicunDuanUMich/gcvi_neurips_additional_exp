@@ -392,7 +392,7 @@ class ARM_earnings1(BaseVAEwRegister):
     def get_plates(self, batch_size, sample_dict):
         return {
             "plate_batch": self.plate("plate_batch", batch_size, dim=-1),
-            "plate_n": pyro.plate("plate_n", sample_dict["N"], dim=-2),
+            "plate_n": self.plate("plate_n", sample_dict["N"], dim=-2),
         }
 
     def model(self, batch_size, sample_dict):
@@ -766,12 +766,12 @@ class ARM_election88_ch14(BaseVAEwRegister):
 
         plates = self.get_plates(batch_size, sample_dict)
         with plates["plate_batch"]:
-            sample_dict["mu_a"] = self.sample("mu_a", self.scalar_normal_dist(0.0, 1.0))
+            sample_dict["mu_a"] = self.r_sample("mu_a", self.scalar_normal_dist(0.0, 1.0))
             with plates["plate_a"]:
-                sample_dict["a"] = pyro.sample("a", dist.Normal(sample_dict["mu_a"],
+                sample_dict["a"] = self.r_sample("a", dist.Normal(sample_dict["mu_a"],
                                                                 sample_dict["sigma_a"]))
             with plates["plate_b"]:
-                sample_dict["b"] = pyro.sample("b", self.scalar_normal_dist(0.0, 100.0))
+                sample_dict["b"] = self.r_sample("b", self.scalar_normal_dist(0.0, 100.0))
             with plates["plate_n"]:
                 y_hat = sample_dict["b"][..., 0, :].unsqueeze(-2) * sample_dict["black"] + \
                         sample_dict["b"][..., 1, :].unsqueeze(-2) * sample_dict["female"] + \
@@ -1652,7 +1652,7 @@ class ARM_hiv_chr(BaseVAEwRegister):
                 sample_dict["person"] = repeat(torch.arange(sample_dict["J"], device=self.device),
                                                "k -> (r k)", r=sample_dict["N"] // sample_dict["J"])
             with DataContext(sample_dict, self):
-                sample_dict["time"] = dist.Uniform(10, 100).sample((sample_dict["N"], batch_size)).to(device=self.device)
+                sample_dict["time"] = dist.Uniform(10.0, 100.0).sample((sample_dict["N"], batch_size)).to(device=self.device)
                 sample_dict["sigma_a1"] = torch.ones(batch_size, device=self.device) * 1.0
                 sample_dict["sigma_a2"] = torch.ones(batch_size, device=self.device) * 0.1
                 sample_dict["sigma_y"] = torch.ones(batch_size, device=self.device) * 0.1
@@ -1699,7 +1699,7 @@ class ARM_hiv_inter_chr(BaseVAEwRegister):
                 sample_dict["person"] = repeat(torch.arange(sample_dict["J"], device=self.device),
                                                "k -> (r k)", r=sample_dict["N"] // sample_dict["J"])
             with DataContext(sample_dict, self):
-                sample_dict["time"] = dist.Uniform(10, 100).sample((sample_dict["N"], batch_size)).to(device=self.device)
+                sample_dict["time"] = dist.Uniform(10.0, 100.0).sample((sample_dict["N"], batch_size)).to(device=self.device)
                 sample_dict["treatment"] = torch.randint(low=0, high=10,
                                                         size=(sample_dict["N"], batch_size),
                                                         device=self.device)
@@ -1751,7 +1751,7 @@ class ARM_hiv_inter(BaseVAEwRegister):
                 sample_dict["person"] = repeat(torch.arange(sample_dict["J"], device=self.device),
                                                "k -> (r k)", r=sample_dict["N"] // sample_dict["J"])
             with DataContext(sample_dict, self):
-                sample_dict["time"] = dist.Uniform(10, 100).sample((sample_dict["N"], batch_size)).to(device=self.device)
+                sample_dict["time"] = dist.Uniform(10.0, 100.0).sample((sample_dict["N"], batch_size)).to(device=self.device)
                 sample_dict["treatment"] = torch.randint(low=0, high=10,
                                                         size=(sample_dict["N"], batch_size),
                                                         device=self.device)
@@ -1801,7 +1801,7 @@ class ARM_hiv(BaseVAEwRegister):
                 sample_dict["person"] = repeat(torch.arange(sample_dict["J"], device=self.device),
                                                "k -> (r k)", r=sample_dict["N"] // sample_dict["J"])
             with DataContext(sample_dict, self):
-                sample_dict["time"] = dist.Uniform(10, 100).sample((sample_dict["N"], batch_size)).to(device=self.device)
+                sample_dict["time"] = dist.Uniform(10.0, 100.0).sample((sample_dict["N"], batch_size)).to(device=self.device)
                 sample_dict["sigma_a1"] = torch.ones(batch_size, device=self.device) * 1.0
                 sample_dict["sigma_a2"] = torch.ones(batch_size, device=self.device) * 0.1
                 sample_dict["sigma_y"] = torch.ones(batch_size, device=self.device) * 0.1
@@ -1926,7 +1926,7 @@ class ARM_kidiq_interaction_c(BaseVAEwRegister):
                 mom_hs = torch.randn(sample_dict["N"], batch_size, device=self.device) * 3 + 0.5
                 mom_iq = torch.randint(low=80, high=120,
                                         size=(sample_dict["N"], batch_size),
-                                        device=self.device)
+                                        device=self.device).float()
                 sample_dict["c_mom_hs"] = mom_hs - torch.mean(mom_hs, dim=0)
                 sample_dict["c_mom_iq"] = mom_iq - torch.mean(mom_iq, dim=0)
                 sample_dict["inter"] = sample_dict["c_mom_hs"] * sample_dict["c_mom_iq"]
@@ -1969,7 +1969,7 @@ class ARM_kidiq_interaction_c2(BaseVAEwRegister):
                 mom_hs = torch.randn(sample_dict["N"], batch_size, device=self.device) * 3 + 0.5
                 mom_iq = torch.randint(low=80, high=120,
                                         size=(sample_dict["N"], batch_size),
-                                        device=self.device)
+                                        device=self.device).float()
                 sample_dict["c2_mom_hs"] = mom_hs - 0.5
                 sample_dict["c2_mom_iq"] = mom_iq - 100
                 sample_dict["inter"] = sample_dict["c2_mom_hs"] * sample_dict["c2_mom_iq"]
@@ -2012,7 +2012,7 @@ class ARM_kidiq_interaction_z(BaseVAEwRegister):
                 mom_hs = torch.randn(sample_dict["N"], batch_size, device=self.device) * 3 + 0.5
                 mom_iq = torch.randint(low=80, high=120,
                                         size=(sample_dict["N"], batch_size),
-                                        device=self.device)
+                                        device=self.device).float()
                 sample_dict["z_mom_hs"] = (mom_hs - torch.mean(mom_hs, dim=0)) / (2 * torch.std(mom_hs, dim=0))
                 sample_dict["z_mom_iq"] = (mom_iq - torch.mean(mom_iq, dim=0)) / (2 * torch.std(mom_iq, dim=0))
                 sample_dict["inter"] = sample_dict["z_mom_hs"] * sample_dict["z_mom_iq"]
@@ -2055,7 +2055,7 @@ class ARM_kidiq_interaction(BaseVAEwRegister):
                 sample_dict["mom_hs"] = torch.randn(sample_dict["N"], batch_size, device=self.device) * 3 + 0.5
                 sample_dict["mom_iq"] = torch.randint(low=80, high=120,
                                                         size=(sample_dict["N"], batch_size),
-                                                        device=self.device)
+                                                        device=self.device).float()
                 sample_dict["inter"] = sample_dict["mom_hs"] * sample_dict["mom_iq"]
                 sample_dict["sigma"] = torch.ones(batch_size, device=self.device) * 0.1
         else:
@@ -2096,7 +2096,7 @@ class ARM_kidiq_multi_preds(BaseVAEwRegister):
                 sample_dict["mom_hs"] = torch.randn(sample_dict["N"], batch_size, device=self.device) * 3 + 0.5
                 sample_dict["mom_iq"] = torch.randint(low=80, high=120,
                                                         size=(sample_dict["N"], batch_size),
-                                                        device=self.device)
+                                                        device=self.device).float()
                 sample_dict["sigma"] = torch.ones(batch_size, device=self.device) * 0.1
         else:
             sample_dict = copy.copy(sample_dict)
@@ -2169,7 +2169,7 @@ class ARM_kidscore_momiq(BaseVAEwRegister):
             with DataContext(sample_dict, self):
                 sample_dict["mom_iq"] = torch.randint(low=80, high=120,
                                                         size=(sample_dict["N"], batch_size),
-                                                        device=self.device)
+                                                        device=self.device).float()
                 sample_dict["sigma"] = torch.ones(batch_size, device=self.device) * 0.1
         else:
             sample_dict = copy.copy(sample_dict)
@@ -2452,7 +2452,7 @@ class ARM_logearn_interaction_z(BaseVAEwRegister):
             with DataContext(sample_dict, self):
                 height = torch.randint(low=150, high=190,
                                         size=(sample_dict["N"], batch_size),
-                                        device=self.device)
+                                        device=self.device).float()
                 sample_dict["z_height"] = (height - torch.mean(height, dim=0)) / torch.std(height, dim=0)
                 sample_dict["male"] = torch.randint(low=0, high=2,
                                                     size=(sample_dict["N"], batch_size),
@@ -2523,7 +2523,7 @@ class ARM_logearn_interaction(BaseVAEwRegister):
 
 class ARM_logearn_logheight(BaseVAEwRegister):
     x_dim = 151
-    theta_dim = 2
+    theta_dim = 3
 
     def get_plates(self, batch_size, sample_dict):
         return {
@@ -2900,7 +2900,7 @@ class ARM_pilots_ch13(BaseVAEwRegister):
             "plate_batch": self.plate("plate_batch", batch_size, dim=-1),
             "plate_n": self.plate("plate_n", sample_dict["N"], dim=-2),
             "plate_group": self.plate("plate_group", sample_dict["n_groups"], dim=-2),
-            "plate_scenario": self.plate("plate_scenario", sample_dict["n_scenario"], dim=-2)
+            "plate_scenario": self.plate("plate_scenario", sample_dict["n_scenarios"], dim=-2)
         }
 
     def model(self, batch_size, sample_dict):
@@ -2931,8 +2931,8 @@ class ARM_pilots_ch13(BaseVAEwRegister):
 
         plates = self.get_plates(batch_size, sample_dict)
         with plates["plate_batch"]:
-            sample_dict["mu"] = self.r_sample("mu", dist.Uniform(torch.tensor(-100, device=self.device), 
-                                                                 torch.tensor(100, device=self.device)))
+            sample_dict["mu"] = self.r_sample("mu", dist.Uniform(torch.tensor(-100.0, device=self.device), 
+                                                                 torch.tensor(100.0, device=self.device)))
             with plates["plate_group"]:
                 sample_dict["gamma"] = self.r_sample("gamma", self.scalar_normal_dist(0.0, 100.0))
             with plates["plate_scenario"]:
@@ -2956,7 +2956,7 @@ class ARM_pilots_ch14(BaseVAEwRegister):
             "plate_batch": self.plate("plate_batch", batch_size, dim=-1),
             "plate_n": self.plate("plate_n", sample_dict["N"], dim=-2),
             "plate_group": self.plate("plate_group", sample_dict["n_groups"], dim=-2),
-            "plate_scenario": self.plate("plate_scenario", sample_dict["n_scenario"], dim=-2)
+            "plate_scenario": self.plate("plate_scenario", sample_dict["n_scenarios"], dim=-2)
         }
 
     def model(self, batch_size, sample_dict):
@@ -3044,7 +3044,10 @@ class ARM_pilots_chr_ch13(BaseVAEwRegister):
         with plates["plate_batch"]:
             sample_dict["mu_a"] = self.r_sample("mu_a", self.scalar_normal_dist(0.0, 1.0))
             sample_dict["mu_b"] = self.r_sample("mu_b", self.scalar_normal_dist(0.0, 1.0))
-            
+            sample_dict["eta_a"] = self.r_sample("eta_a", dist.Normal(torch.zeros(sample_dict["n_groups"], device=self.device),
+                                                                      torch.ones(sample_dict["n_groups"], device=self.device)).to_event(1))
+            sample_dict["eta_b"] = self.r_sample("eta_b", dist.Normal(torch.zeros(sample_dict["n_scenarios"], device=self.device),
+                                                                      torch.ones(sample_dict["n_scenarios"], device=self.device)).to_event(1))
             with plates["plate_n"]:
                 a = 0.1 * sample_dict["mu_a"] + rearrange(sample_dict["eta_a"], "b k -> k b") * 0.05
                 b = 0.1 * sample_dict["mu_b"] + rearrange(sample_dict["eta_b"], "b k -> k b") * 0.05
@@ -3065,7 +3068,7 @@ class ARM_pilots_chr_ch14(BaseVAEwRegister):
             "plate_batch": self.plate("plate_batch", batch_size, dim=-1),
             "plate_n": self.plate("plate_n", sample_dict["N"], dim=-2),
             "plate_group": self.plate("plate_group", sample_dict["n_groups"], dim=-2),
-            "plate_scenario": self.plate("plate_scenario", sample_dict["n_scenario"], dim=-2)
+            "plate_scenario": self.plate("plate_scenario", sample_dict["n_scenarios"], dim=-2)
         }
 
     def model(self, batch_size, sample_dict):
@@ -3332,7 +3335,7 @@ class ARM_radon_inter_vary_chr(BaseVAEwRegister):
 
 class ARM_radon_inter_vary(BaseVAEwRegister):
     x_dim = 200
-    theta_dim = 14
+    theta_dim = 15
 
     def get_plates(self, batch_size, sample_dict):
         return {
@@ -3637,7 +3640,7 @@ class ARM_radon_vary_intercept_floor_chr(BaseVAEwRegister):
             "plate_batch": self.plate("plate_batch", batch_size, dim=-1),
             "plate_n": self.plate("plate_n", sample_dict["N"], dim=-2),
             "plate_county": self.plate("plate_county", sample_dict["n_county"], dim=-2),
-            "plate_b": self.plate("b", 2, dim=-2),
+            "plate_b": self.plate("plate_b", 2, dim=-2),
         }
 
     def model(self, batch_size, sample_dict):
@@ -3683,7 +3686,7 @@ class ARM_radon_vary_intercept_floor(BaseVAEwRegister):
             "plate_batch": self.plate("plate_batch", batch_size, dim=-1),
             "plate_n": self.plate("plate_n", sample_dict["N"], dim=-2),
             "plate_county": self.plate("plate_county", sample_dict["n_county"], dim=-2),
-            "plate_b": self.plate("b", 2, dim=-2),
+            "plate_b": self.plate("plate_b", 2, dim=-2),
         }
 
     def model(self, batch_size, sample_dict):
@@ -3729,7 +3732,7 @@ class ARM_radon_vary_intercept_floor2_chr(BaseVAEwRegister):
             "plate_batch": self.plate("plate_batch", batch_size, dim=-1),
             "plate_n": self.plate("plate_n", sample_dict["N"], dim=-2),
             "plate_county": self.plate("plate_county", sample_dict["n_county"], dim=-2),
-            "plate_b": self.plate("b", 3, dim=-2),
+            "plate_b": self.plate("plate_b", 3, dim=-2),
         }
 
     def model(self, batch_size, sample_dict):
@@ -3777,7 +3780,7 @@ class ARM_radon_vary_intercept_floor2(BaseVAEwRegister):
             "plate_batch": self.plate("plate_batch", batch_size, dim=-1),
             "plate_n": self.plate("plate_n", sample_dict["N"], dim=-2),
             "plate_county": self.plate("plate_county", sample_dict["n_county"], dim=-2),
-            "plate_b": self.plate("b", 3, dim=-2),
+            "plate_b": self.plate("plate_b", 3, dim=-2),
         }
 
     def model(self, batch_size, sample_dict):
@@ -4302,7 +4305,7 @@ class ARM_unemployment(BaseVAEwRegister):
                                                                     torch.ones((2, ), device=self.device) * 0.2).to_event(1))
             with plates["plate_n"]:
                 y_hat = sample_dict["beta"][..., 0] + \
-                        sample_dict["beta"][..., 1] * sample_dict["y_hat"]
+                        sample_dict["beta"][..., 1] * sample_dict["y_lag"]
                 sample_dict["y"] = self.r_obs("y",
                                             dist.Normal(y_hat, torch.ones_like(y_hat) * 0.1),
                                             obs=sample_dict.get("y", None))
@@ -4489,7 +4492,7 @@ class ARM_wells_dae_inter_c(BaseVAEwRegister):
                 arsenic = torch.rand(sample_dict["N"], batch_size, device=self.device) * 10 + 1
                 educ = torch.randint(low=0, high=5,
                                      size=(sample_dict["N"], batch_size),
-                                     device=self.device)
+                                     device=self.device).float()
                 sample_dict["c_dist100"] = (dist_ - torch.mean(dist_, dim=0)) / 100
                 sample_dict["c_arsenic"] = arsenic - torch.mean(arsenic, dim=0)
                 sample_dict["c_educ4"] = (educ - torch.mean(educ, dim=0)) / 4
