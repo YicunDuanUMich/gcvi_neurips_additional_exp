@@ -6,9 +6,11 @@ import copy
 import pyro.distributions as dist
 import contextlib
 
-from einops import rearrange
+from einops import rearrange, repeat
 from typing import Dict
 from collections import OrderedDict, UserDict
+
+from pyro_cases.set_transformer import SetTransformer
 
 
 class DenseEncoderGaussian(nn.Module):
@@ -71,15 +73,22 @@ class BaseVAE(nn.Module):
     x_dim = None
     theta_dim = None
     
-    def __init__(self, hidden_dim):
+    def __init__(self, hidden_dim, use_neural_network=True, use_set_transformer=True):
         super().__init__()
         self.register_buffer("dummy_param", torch.zeros(0))
-        self.init_network(hidden_dim)
-
-    def init_network(self, hidden_dim):
-        self.encoder = DenseEncoderGaussian(self.x_dim, 
-                                            self.theta_dim * 2, 
-                                            hidden_dim)
+        self.use_neural_network = use_neural_network
+        self.use_set_transformer = use_set_transformer
+        if self.use_neural_network:
+            if self.use_set_transformer:
+                self.encoder = SetTransformer(n_out=self.theta_dim, 
+                                                hidden_dim=hidden_dim, 
+                                                num_heads=4)
+            else:
+                self.encoder = DenseEncoderGaussian(self.x_dim, 
+                                                    self.theta_dim * 2, 
+                                                    hidden_dim)
+        else:
+            self.encoder = None
     
     @property
     def device(self):
@@ -89,11 +98,21 @@ class BaseVAE(nn.Module):
         raise NotImplementedError()
 
     def guide(self, batch_size, sample_dict: Dict[str, torch.Tensor]):
-        pyro.module("encoder", self.encoder)
-        x = self.extract_x(sample_dict)
-        assert batch_size == x.shape[0]
-
-        theta_loc, theta_scale = self.encoder(x)
+        if self.use_neural_network:
+            pyro.module("encoder", self.encoder)
+            if self.use_set_transformer:
+                x = self.extract_x_for_set_transformer(batch_size, sample_dict)
+            else:
+                x = self.extract_x(sample_dict)
+            assert batch_size == x.shape[0]
+            theta_loc, theta_scale = self.encoder(x)
+        else:
+            theta_loc = pyro.param("param_theta_loc", 
+                                   lambda: torch.zeros(batch_size, self.theta_dim, device=self.device))
+            theta_scale = pyro.param("param_theta_scale", 
+                                     lambda: torch.ones(batch_size, self.theta_dim, device=self.device), 
+                                     constraint=dist.constraints.positive)
+        
         with pyro.plate("plate_batch", batch_size):    
             pyro.sample("latent", dist.Normal(theta_loc, theta_scale).to_event(1))
 
@@ -115,6 +134,11 @@ class BaseVAE(nn.Module):
         x = self._extract_x_func(sample_dict)
         assert x.shape[-1] == self.x_dim
         return x
+    
+    def extract_x_for_set_transformer(self, batch_size, sample_dict):
+        x = self._extract_x_func(sample_dict)
+        assert x.ndim == 2
+        return x.unsqueeze(-1)
     
     def _extract_theta_func(self, sample_dict):
         return sample_dict["theta"]
@@ -162,8 +186,8 @@ class WrappedPlate:
 
 
 class BaseVAEwRegister(BaseVAE):    
-    def __init__(self, hidden_dim):
-        super().__init__(hidden_dim)
+    def __init__(self, hidden_dim, use_neural_network=True, use_set_transformer=True):
+        super().__init__(hidden_dim, use_neural_network, use_set_transformer)
         self.sample_dict_instr = {
             "meta_data": [],
             "data": [],
@@ -172,6 +196,8 @@ class BaseVAEwRegister(BaseVAE):
         }
         self.plate_tracker = PlateTracker()
         self.already_registered = False
+        self.meta_data_skip_set = set()
+        self.data_skip_set = set()
 
     def plate(self, name, size, dim, **plate_kwargs):
         return WrappedPlate(self.plate_tracker, 
@@ -184,11 +210,20 @@ class BaseVAEwRegister(BaseVAE):
         raise NotImplementedError()
 
     def guide(self, batch_size, sample_dict: Dict[str, torch.Tensor]):
-        pyro.module("encoder", self.encoder)
-        x = self.extract_x(sample_dict)
-        assert batch_size == x.shape[0]
-
-        theta_loc, theta_scale = self.encoder(x)
+        if self.use_neural_network:
+            pyro.module("encoder", self.encoder)
+            if self.use_set_transformer:
+                x = self.extract_x_for_set_transformer(batch_size, sample_dict)
+            else:
+                x = self.extract_x(sample_dict)
+            assert batch_size == x.shape[0]
+            theta_loc, theta_scale = self.encoder(x)
+        else:
+            theta_loc = pyro.param("param_theta_loc", 
+                                   lambda: torch.zeros(batch_size, self.theta_dim, device=self.device))
+            theta_scale = pyro.param("param_theta_scale", 
+                                     lambda: torch.ones(batch_size, self.theta_dim, device=self.device), 
+                                     constraint=dist.constraints.positive)
 
         plates = self.get_plates(batch_size, sample_dict)
         for kp, p in plates.items():
@@ -226,6 +261,39 @@ class BaseVAEwRegister(BaseVAE):
             event_shape = " ".join([f"e{i}" for i in range(len(obs_details["event_shape"]))])
             x.append(rearrange(sample_dict[obs_name], f"... b {event_shape} -> b (... {event_shape})"))
         return torch.cat(x, dim=-1)
+    
+    def extract_x_for_set_transformer(self, batch_size, sample_dict):
+        x = []
+        assert "N" in self.sample_dict_instr["meta_data"]
+        N = sample_dict["N"]
+
+        for data_name in self.sample_dict_instr["data"]:
+            input_data = sample_dict[data_name]
+            if input_data.ndim == 1:
+                x.append(repeat(input_data, "b -> b n", n=N))
+                continue
+            if input_data.shape[0] == N:
+                x.append(rearrange(input_data, "n b -> b n"))
+            else:
+                if data_name not in self.data_skip_set:
+                    print(f"WARNING: the input doesn't involve data {data_name}")
+                    self.data_skip_set.add(data_name)
+
+        for obs_name, _obs_details in self.sample_dict_instr["obs"].items():
+            x.append(rearrange(sample_dict[obs_name], "n b -> b n"))
+
+        for meta_data_name in self.sample_dict_instr["meta_data"]:
+            meta_data = sample_dict[meta_data_name]
+            if not isinstance(meta_data, torch.Tensor):
+                continue
+            if meta_data.ndim == 1 and meta_data.shape[0] == N:
+                x.append(repeat(meta_data, "n -> b n", b=batch_size))
+            else:
+                if meta_data_name not in self.meta_data_skip_set:
+                    print(f"WARNING: the input doesn't involve meta data {meta_data_name}")
+                    self.meta_data_skip_set.add(meta_data_name)
+
+        return torch.stack(x, dim=-1)
     
     def _extract_theta_func(self, sample_dict):
         theta = []

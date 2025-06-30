@@ -8,7 +8,7 @@
 
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
-#SBATCH --gpus-per-node=a40:8
+#SBATCH --gpus-per-node=a40:4
 #SBATCH --cpus-per-gpu=4
 #SBATCH --mem-per-gpu=40GB
 #SBATCH --gpu_cmode=shared
@@ -24,4 +24,6 @@ echo "running on: $SLURM_JOB_NODELIST"
 cd ~/gcvi_neurips_additional_exp
 source .venv/bin/activate
 
-python pyro_cases/run_multi.py --save-path /scratch/regier_root/regier0/pduan/gcvi_output --cuda-idx all --repeat-times 100
+python pyro_cases/run_multi_set_transformer_favi.py \
+    --save-path /scratch/regier_root/regier0/pduan/gcvi_06-30_set_transformer_favi_output \
+    --repeat-times 96

@@ -111,8 +111,8 @@ class SLCPwDistractorVAE(SLCPVAE):
     x_dim = 100
     theta_dim = 5
 
-    def __init__(self, hidden_dim):
-        super().__init__(hidden_dim)
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
 
         # from sbibm
         self.register_buffer("permutation_idx",
@@ -142,8 +142,8 @@ class BeroulliGLMRAWVAE(BaseVAE):
     x_dim = 100
     theta_dim = 10
 
-    def __init__(self, hidden_dim):
-        super().__init__(hidden_dim)
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
 
         # from sbibm
         self.register_buffer("stimulus_I",
@@ -1066,7 +1066,7 @@ class ARM_electric_1b(BaseVAEwRegister):
                 sample_dict["N"] = 50
                 sample_dict["n_pair"] = 5
                 assert sample_dict["N"] % sample_dict["n_pair"] == 0
-                sample_dict["pair"] = repeat(torch.arange(sample_dict["n_pair"]),
+                sample_dict["pair"] = repeat(torch.arange(sample_dict["n_pair"], device=self.device),
                                             "k -> (r k)",
                                             r=sample_dict["N"] // sample_dict["n_pair"])
             with DataContext(sample_dict, self):
@@ -1119,7 +1119,7 @@ class ARM_electric_1b_chr(BaseVAEwRegister):
                 sample_dict["N"] = 50
                 sample_dict["n_pair"] = 5
                 assert sample_dict["N"] % sample_dict["n_pair"] == 0
-                sample_dict["pair"] = repeat(torch.arange(sample_dict["n_pair"]),
+                sample_dict["pair"] = repeat(torch.arange(sample_dict["n_pair"], device=self.device),
                                             "k -> (r k)",
                                             r=sample_dict["N"] // sample_dict["n_pair"])
             with DataContext(sample_dict, self):
@@ -4956,22 +4956,20 @@ class BUGS_dyes(BaseVAEwRegister):
 
 
 class BUGS_lsat(BaseVAEwRegister):
-    x_dim = 150
+    x_dim = 100
     theta_dim = 3
 
     def get_plates(self, batch_size, sample_dict):
         return {
             "plate_batch": self.plate("plate_batch", batch_size, dim=-1),
             "plate_n": self.plate("plate_n", sample_dict["N"], dim=-2),
-            "plate_t": self.plate("plate_t", sample_dict["T"], dim=-3)
         }
 
     def model(self, batch_size, sample_dict):
         if sample_dict is None:
             sample_dict = SampleDict()
             with MetaDataContext(sample_dict, self):
-                sample_dict["N"] = 50
-                sample_dict["T"] = 3
+                sample_dict["N"] = 100
             with DataContext(sample_dict, self):
                 pass
         else:
@@ -4982,7 +4980,7 @@ class BUGS_lsat(BaseVAEwRegister):
             sample_dict["alpha"] = self.r_sample("alpha", self.scalar_normal_dist(0.0, 100.0))
             sample_dict["theta"] = self.r_sample("theta", self.scalar_normal_dist(0.0, 1.0))
             sample_dict["beta"] = self.r_sample("beta", self.scalar_normal_dist(0.0, 100.0))
-            with plates["plate_n"], plates["plate_t"]:
+            with plates["plate_n"]:
                 sample_dict["r"] = self.r_obs("r",
                                             dist.Bernoulli(logits=sample_dict["beta"] * sample_dict["theta"] - sample_dict["alpha"]),
                                             obs=sample_dict.get("r", None))
