@@ -121,11 +121,13 @@ def train_and_test_set_transformer_favi(task_name,
     if isinstance(vae, BaseVAEwRegister):
         vae.do_register(batch_size)
 
-    def run_one_iter():
+    def run_one_iter(sample_dict):
         favi_optimizer.zero_grad()
         favi_loss = favi_encoder.batch_favi_loss(vae.extract_theta(sample_dict), 
                                                  vae.extract_x_for_set_transformer(batch_size, sample_dict))
         favi_loss = favi_loss.mean()
+        assert not torch.isnan(favi_loss).any()
+        assert not torch.isinf(favi_loss).any()
         favi_loss.backward()
         torch.nn.utils.clip_grad_norm_(favi_encoder.parameters(), max_norm=1.0)
         favi_optimizer.step()
@@ -137,13 +139,13 @@ def train_and_test_set_transformer_favi(task_name,
         if suppress_error:
             try:
                 if favi_error is None:
-                    run_one_iter()
+                    run_one_iter(sample_dict)
             except Exception as e:
                 if not silent:
                     print(colored(f"get exception during FAVI training:\n {e}", "red"))
                 favi_error = str(e)
         else:
-            run_one_iter()
+            run_one_iter(sample_dict)
 
     favi_vae_wrap = copy.deepcopy(vae)
     favi_vae_wrap.encoder = favi_encoder
