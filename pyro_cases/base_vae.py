@@ -110,7 +110,7 @@ class BaseVAE(nn.Module):
             theta_loc = pyro.param("param_theta_loc", 
                                    lambda: torch.zeros(batch_size, self.theta_dim, device=self.device))
             theta_scale = pyro.param("param_theta_scale", 
-                                     lambda: torch.ones(batch_size, self.theta_dim, device=self.device), 
+                                     lambda: 0.1 * torch.ones(batch_size, self.theta_dim, device=self.device), 
                                      constraint=dist.constraints.positive)
         
         with pyro.plate("plate_batch", batch_size):    
@@ -222,7 +222,7 @@ class BaseVAEwRegister(BaseVAE):
             theta_loc = pyro.param("param_theta_loc", 
                                    lambda: torch.zeros(batch_size, self.theta_dim, device=self.device))
             theta_scale = pyro.param("param_theta_scale", 
-                                     lambda: torch.ones(batch_size, self.theta_dim, device=self.device), 
+                                     lambda: 0.1 * torch.ones(batch_size, self.theta_dim, device=self.device), 
                                      constraint=dist.constraints.positive)
 
         plates = self.get_plates(batch_size, sample_dict)
