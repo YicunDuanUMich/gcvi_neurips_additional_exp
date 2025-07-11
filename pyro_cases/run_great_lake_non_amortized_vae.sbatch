@@ -25,5 +25,5 @@ cd ~/gcvi_neurips_additional_exp
 source .venv/bin/activate
 
 python pyro_cases/run_multi_non_amortized_vae.py \
-    --save-path /scratch/regier_root/regier0/pduan/gcvi_06-30_non_amortized_vae_output \
+    --save-path /scratch/regier_root/regier0/pduan/gcvi_07-11_non_amortized_vae_output \
     --repeat-times 96
