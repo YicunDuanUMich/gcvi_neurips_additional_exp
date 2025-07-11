@@ -108,9 +108,9 @@ class BaseVAE(nn.Module):
             theta_loc, theta_scale = self.encoder(x)
         else:
             theta_loc = pyro.param("param_theta_loc", 
-                                   lambda: (torch.rand(batch_size, self.theta_dim, device=self.device) - 0.5) * 10)
+                                   lambda: (torch.rand(batch_size, self.theta_dim, device=self.device) - 0.5) * 20)
             theta_scale = pyro.param("param_theta_scale", 
-                                     lambda: (torch.rand(batch_size, self.theta_dim, device=self.device) + 1e-2) * 10, 
+                                     lambda: (torch.rand(batch_size, self.theta_dim, device=self.device) + 1e-3) * 100, 
                                      constraint=dist.constraints.positive)
         
         with pyro.plate("plate_batch", batch_size):    
@@ -220,9 +220,9 @@ class BaseVAEwRegister(BaseVAE):
             theta_loc, theta_scale = self.encoder(x)
         else:
             theta_loc = pyro.param("param_theta_loc", 
-                                   lambda: (torch.rand(batch_size, self.theta_dim, device=self.device) - 0.5) * 10)
+                                   lambda: (torch.rand(batch_size, self.theta_dim, device=self.device) - 0.5) * 20)
             theta_scale = pyro.param("param_theta_scale", 
-                                     lambda: (torch.rand(batch_size, self.theta_dim, device=self.device) + 1e-2) * 10, 
+                                     lambda: (torch.rand(batch_size, self.theta_dim, device=self.device) + 1e-3) * 100, 
                                      constraint=dist.constraints.positive)
 
         plates = self.get_plates(batch_size, sample_dict)
