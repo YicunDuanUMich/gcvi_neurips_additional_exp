@@ -80,7 +80,7 @@ def main(save_path, repeat_times, nn_type, max_processes_per_gpu):
                     "lr": 1e-3,
                     "lr_schedule": "cosine_annealing",
                     "batch_size": 1024,
-                    "network_width": 32,
+                    "network_width": 32 if nn_type == "set_transformer" else 256,
                     "steps": 10_000,
                     "test_seed": 7272,
                     "num_test_obs": 1000,
