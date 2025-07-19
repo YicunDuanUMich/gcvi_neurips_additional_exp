@@ -9,11 +9,11 @@ from pathlib import Path
 from termcolor import colored
 
 from pyro_cases.run import vae_dict
-from pyro_cases.run_set_transformer_favi import train_and_test_set_transformer_favi
+from pyro_cases.run_favi import train_and_test_favi
 
 
 def my_worker(kwargs):
-    return train_and_test_set_transformer_favi(**kwargs)
+    return train_and_test_favi(**kwargs)
 
 def process_task(tags, task_params_nested_list, least_tasks_per_chunk):
     results = []
@@ -45,8 +45,9 @@ def process_task(tags, task_params_nested_list, least_tasks_per_chunk):
 @click.command()
 @click.option("--save-path", type=str, help="path to output file")
 @click.option("--repeat-times", type=int)
+@click.option("--nn-type", type=str)
 @click.option("--max-processes-per-gpu", type=int, default=4)
-def main(save_path, repeat_times, max_processes_per_gpu):
+def main(save_path, repeat_times, nn_type, max_processes_per_gpu):
     task_names = list(vae_dict.keys())
     save_path = Path(save_path)
     
@@ -87,6 +88,7 @@ def main(save_path, repeat_times, max_processes_per_gpu):
                     "silent": True,
                     "return_vae": False,
                     "suppress_error": True,
+                    "nn_type": nn_type,
                 }
             )
     

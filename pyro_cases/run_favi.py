@@ -44,27 +44,28 @@ class NullScheduler:
         pass
 
 
-def train_and_test_set_transformer_favi(task_name, 
-                                        seed, 
-                                        device, 
-                                        lr, 
-                                        lr_schedule,
-                                        batch_size,
-                                        network_width,
-                                        steps,
-                                        test_seed,
-                                        num_test_obs,
-                                        show_progress,
-                                        silent=False,
-                                        return_vae=False,
-                                        suppress_error=True):
+def train_and_test_favi(task_name, 
+                        seed, 
+                        device, 
+                        lr, 
+                        lr_schedule,
+                        batch_size,
+                        network_width,
+                        steps,
+                        test_seed,
+                        num_test_obs,
+                        show_progress,
+                        silent=False,
+                        return_vae=False,
+                        suppress_error=True,
+                        nn_type="set_transformer"):
     pyro.clear_param_store()
 
     if task_name in vae_dict:
         vae = vae_dict[task_name]
     else:
         raise NotImplementedError()
-    vae = vae(hidden_dim=network_width, use_neural_network=True, use_set_transformer=True).to(device=device)
+    vae = vae(hidden_dim=network_width, use_neural_network=True, nn_type=nn_type).to(device=device)
     favi_encoder = copy.deepcopy(vae.encoder).to(device=device)
     favi_optimizer = optim.Adam(favi_encoder.parameters(),
                                 lr=lr, amsgrad=True)

@@ -25,6 +25,6 @@ cd ~/gcvi_neurips_additional_exp
 source .venv/bin/activate
 
 python pyro_cases/run_multi_favi.py \
-    --save-path /scratch/regier_root/regier0/pduan/gcvi_06-30_set_transformer_favi_output \
-    --nn-type set_transformer \
+    --save-path /scratch/regier_root/regier0/pduan/gcvi_07-19_deep_set_favi_output \
+    --nn-type deep_set \
     --repeat-times 96
