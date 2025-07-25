@@ -76,7 +76,7 @@ def main(save_path, repeat_times, max_processes_per_gpu):
                     "task_name": tn,
                     "seed": random.Random(1234 + ri).randint(10_000, 100_000 - 1),
                     "device": device,
-                    "lr": 1e-3,
+                    "lr": 1e-2,
                     "num_particles": 1,
                     "vectorize_particles": False,
                     "steps": 10_000,
