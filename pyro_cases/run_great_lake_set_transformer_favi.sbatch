@@ -24,7 +24,7 @@ echo "running on: $SLURM_JOB_NODELIST"
 cd ~/gcvi_neurips_additional_exp
 source .venv/bin/activate
 
-python pyro_cases/run_multi_favi.py \
+python pyro_cases/run_multi_amortized_favi.py \
     --save-path /scratch/regier_root/regier0/pduan/gcvi_06-30_set_transformer_favi_output \
     --nn-type set_transformer \
     --repeat-times 96

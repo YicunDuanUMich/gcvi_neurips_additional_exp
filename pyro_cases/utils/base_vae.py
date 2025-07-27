@@ -10,171 +10,26 @@ from einops import rearrange, repeat
 from typing import Dict
 from collections import OrderedDict, UserDict
 
-from pyro_cases.set_transformer import SetTransformer
-
-
-class DenseEncoderGaussian(nn.Module):
-    def __init__(self, in_dim, out_dim, hidden_dim):
-        super().__init__()
-        self.in_dim = in_dim
-        self.out_dim = out_dim
-        assert self.out_dim % 2 == 0
-        self.hidden_dim = hidden_dim
-        self.scale = torch.tensor(1 / math.sqrt(hidden_dim))
-        self.linear1 = nn.Linear(in_dim, hidden_dim, bias=False)
-        self.linear2 = nn.Linear(hidden_dim, out_dim, bias=False)
-        self.relu = nn.ReLU()
-
-        # Follow proper initialization from our paper
-        torch.nn.init.normal_(self.linear1.weight)
-        torch.nn.init.zeros_(self.linear2.weight)
-
-    @classmethod
-    def eta_to_mu_sigma2(cls, eta1, eta2):
-        sigma2 = -1 / (2 * eta2)
-        mu = eta1 * sigma2
-        return mu, sigma2
-    
-    @classmethod
-    def gaussian_log_density_natural(cls, eta1, eta2, x):
-        return eta1 * x + \
-               eta2 * (x ** 2) + \
-               (eta1 ** 2) / (4 * eta2) + \
-               0.5 * torch.log(-eta2 / torch.pi)
-    
-    def get_eta(self, x):
-        x = self.linear1(x)
-        x = self.relu(x)
-        x = self.linear2(x)
-        # loc, scale = torch.mul(x, self.scale).chunk(2, dim=-1)
-        # # return loc, torch.exp(scale).clamp(min=0.01, max=10.0)
-        # return loc, torch.ones_like(scale)
-        eta1, eta2 = torch.mul(x, self.scale).chunk(2, dim=-1)
-        eta2 = eta2 - 1.0
-        assert eta1.shape == eta2.shape
-        eta2 = eta2.clamp(min=-1000.0, max=-0.1)
-        return eta1, eta2
-
-    def forward(self, x):
-        eta1, eta2 = self.get_eta(x)
-        mu, sigma2 = self.eta_to_mu_sigma2(eta1, eta2)
-        return mu, sigma2.sqrt()
-    
-    def batch_favi_loss(self, theta, x):
-        # loc, scale = self(x)
-        # sigma2 = scale ** 2
-        # return (0.5 * torch.log(sigma2) + (theta - loc) ** 2 / (2 * sigma2)).sum(dim=-1)
-        eta1, eta2 = self.get_eta(x)
-        log_dens = self.gaussian_log_density_natural(eta1, eta2, theta)
-        return -(log_dens.sum(dim=-1))
-
-
-class DeepSetMLP(nn.Module):
-    def __init__(self, n_out, hidden_dim, n_layers):
-        super().__init__()
-
-        self.input_process = None
-        self.hidden_dim = hidden_dim
-        self.register_buffer("dummy_param", torch.zeros(0))
-        self.enc = nn.Sequential(
-            *[nn.Sequential(nn.Linear(hidden_dim, hidden_dim), 
-                            nn.SELU()) 
-              for _ in range(n_layers)]
-        )
-        self.dec = nn.Sequential(
-            *[nn.Sequential(nn.Linear(hidden_dim, hidden_dim), 
-                            nn.SELU()) 
-              for _ in range(n_layers)]
-        )
-        self.final_linear = nn.Linear(in_features=hidden_dim, out_features=n_out * 2)
-        torch.nn.init.zeros_(self.final_linear.weight)
-        torch.nn.init.zeros_(self.final_linear.bias)
-
-        self.scale = 1 / math.sqrt(hidden_dim)
-
-    @property
-    def device(self):
-        return self.dummy_param.device
-    
-    @classmethod
-    def eta_to_mu_sigma2(cls, eta1, eta2):
-        sigma2 = -1 / (2 * eta2)
-        mu = eta1 * sigma2
-        return mu, sigma2
-    
-    @classmethod
-    def gaussian_log_density_natural(cls, eta1, eta2, x):
-        return eta1 * x + \
-               eta2 * (x ** 2) + \
-               (eta1 ** 2) / (4 * eta2) + \
-               0.5 * torch.log(-eta2 / torch.pi)
-
-    def get_eta(self, x):
-        assert x.ndim == 3
-        if self.input_process is None:
-            self.input_process = nn.Sequential(
-                nn.Linear(x.shape[-1], self.hidden_dim),
-                nn.SELU(),
-            ).to(device=self.device)
-        x = self.input_process(x)
-        x = self.enc(x)  # (b, n, c)
-        x = torch.sum(x, dim=1)  # (b, c)
-        out = self.final_linear(self.dec(x))
-        out = out * self.scale
-        out = out.view(out.shape[0], -1, 2)
-        eta1, eta2 = out[..., 0], out[..., 1]
-        eta2 = (eta2 - 1.0).clamp(min=-1000.0, max=-0.1)
-        return eta1, eta2
-    
-    def forward(self, x):
-        eta1, eta2 = self.get_eta(x)
-        mu, sigma2 = self.eta_to_mu_sigma2(eta1, eta2)
-        return mu, sigma2.sqrt()
-
-    def batch_favi_loss(self, theta, x):
-        eta1, eta2 = self.get_eta(x)
-        log_dens = self.gaussian_log_density_natural(eta1, eta2, theta)
-        return -(log_dens.sum(dim=-1))
-
+from pyro_cases.utils.nn_model import SetTransformer, DenseEncoderGaussian, DeepSetMLP
+from pyro_cases.utils.variational_dist import VariationalDist
 
 
 class BaseVAE(nn.Module):
     x_dim = None
     theta_dim = None
+    special_x_process_flag = False
     
-    def __init__(self, hidden_dim, use_neural_network=True, nn_type="set_transformer"):
+    def __init__(self):
         super().__init__()
         self.register_buffer("dummy_param", torch.zeros(0))
-        self.use_neural_network = use_neural_network
-        self.nn_type = nn_type
-        if self.use_neural_network:
-            match nn_type:
-                case "set_transformer":
-                    self.encoder = SetTransformer(n_out=self.theta_dim, 
-                                                    hidden_dim=hidden_dim, 
-                                                    num_heads=4)
-                case "dense_gaussian":
-                    self.encoder = DenseEncoderGaussian(self.x_dim, 
-                                                        self.theta_dim * 2, 
-                                                        hidden_dim)
-                case "deep_set":
-                    self.encoder = DeepSetMLP(n_out=self.theta_dim,
-                                              hidden_dim=hidden_dim,
-                                              n_layers=2)
-                case _:
-                    raise NotImplementedError()
-        else:
-            self.encoder = None
-        
-        self.use_fixed_theta = False
-        self.fixed_theta_loc = None
-        self.fixed_theta_scale = None
+        # only for post-training elbo loss calculate
+        self.use_fixed_raw_pred = False
+        self.fixed_raw_pred = None
     
     # only for post-training elbo loss calculate
-    def set_theta_loc_scale(self, theta_loc, theta_scale):
-        self.use_fixed_theta = True
-        self.fixed_theta_loc = theta_loc
-        self.fixed_theta_scale = theta_scale
+    def set_fixed_raw_pred(self, raw_pred):
+        self.use_fixed_raw_pred = True
+        self.fixed_raw_pred = raw_pred
     
     @property
     def device(self):
@@ -184,30 +39,7 @@ class BaseVAE(nn.Module):
         raise NotImplementedError()
 
     def guide(self, batch_size, sample_dict: Dict[str, torch.Tensor]):
-        if not self.use_fixed_theta:
-            if self.use_neural_network:
-                pyro.module("encoder", self.encoder)
-                match self.nn_type:
-                    case "set_transformer" | "deep_set":
-                        x = self.extract_x_for_set_transformer(batch_size, sample_dict)
-                    case "dense_gaussian":
-                        x = self.extract_x(sample_dict)
-                    case _:
-                        raise NotImplementedError()
-                assert batch_size == x.shape[0]
-                theta_loc, theta_scale = self.encoder(x)
-            else:
-                theta_loc = pyro.param("param_theta_loc", 
-                                    lambda: (torch.rand(batch_size, self.theta_dim, device=self.device) - 0.5) * 20)
-                theta_scale = pyro.param("param_theta_scale", 
-                                        lambda: (torch.rand(batch_size, self.theta_dim, device=self.device) + 1e-3) * 100, 
-                                        constraint=dist.constraints.positive)
-        else:
-            theta_loc = self.fixed_theta_loc
-            theta_scale = self.fixed_theta_scale
-        
-        with pyro.plate("plate_batch", batch_size):    
-            pyro.sample("latent", dist.Normal(theta_loc, theta_scale).to_event(1))
+        raise NotImplementedError()
 
     def get_obs_sample_dict(self, obs_seed):
         pyro.set_rng_seed(obs_seed)
@@ -221,20 +53,18 @@ class BaseVAE(nn.Module):
         return self.model(batch_size=batch_size, sample_dict=None)
     
     def _extract_x_func(self, sample_dict):
-        return sample_dict["x"]
+        raise NotImplementedError()
     
     def extract_x(self, sample_dict):
         x = self._extract_x_func(sample_dict)
         assert x.shape[-1] == self.x_dim
         return x
     
-    def extract_x_for_set_transformer(self, batch_size, sample_dict):
-        x = self._extract_x_func(sample_dict)
-        assert x.ndim == 2
-        return x.unsqueeze(-1)
+    def extract_x_as_set(self, batch_size, sample_dict):
+        raise NotImplementedError()
     
     def _extract_theta_func(self, sample_dict):
-        return sample_dict["theta"]
+        raise NotImplementedError()
     
     def extract_theta(self, sample_dict):
         theta = self._extract_theta_func(sample_dict)
@@ -280,7 +110,28 @@ class WrappedPlate:
 
 class BaseVAEwRegister(BaseVAE):    
     def __init__(self, hidden_dim, use_neural_network=True, nn_type="set_transformer"):
-        super().__init__(hidden_dim, use_neural_network, nn_type)
+        super().__init__()
+
+        self.use_neural_network = use_neural_network
+        self.nn_type = nn_type
+        if self.use_neural_network:
+            match nn_type:
+                case "set_transformer":
+                    self.encoder = SetTransformer(n_out=self.theta_dim, 
+                                                    hidden_dim=hidden_dim, 
+                                                    num_heads=4)
+                case "dense_gaussian":
+                    self.encoder = DenseEncoderGaussian(n_out=self.theta_dim, 
+                                                        hidden_dim=hidden_dim)
+                case "deep_set":
+                    self.encoder = DeepSetMLP(n_out=self.theta_dim,
+                                              hidden_dim=hidden_dim,
+                                              n_layers=2)
+                case _:
+                    raise NotImplementedError()
+        else:
+            self.encoder = None
+
         self.sample_dict_instr = {
             "meta_data": [],
             "data": [],
@@ -291,6 +142,7 @@ class BaseVAEwRegister(BaseVAE):
         self.already_registered = False
         self.meta_data_skip_set = set()
         self.data_skip_set = set()
+        self.variational_dist: VariationalDist = None
 
     def plate(self, name, size, dim, **plate_kwargs):
         return WrappedPlate(self.plate_tracker, 
@@ -303,57 +155,48 @@ class BaseVAEwRegister(BaseVAE):
         raise NotImplementedError()
 
     def guide(self, batch_size, sample_dict: Dict[str, torch.Tensor]):
-        if not self.use_fixed_theta:
+        if not self.use_fixed_raw_pred:
             if self.use_neural_network:
                 pyro.module("encoder", self.encoder)
                 match self.nn_type:
                     case "set_transformer" | "deep_set":
-                        x = self.extract_x_for_set_transformer(batch_size, sample_dict)
+                        x = self.extract_x_as_set(batch_size, sample_dict)
                     case "dense_gaussian":
                         x = self.extract_x(sample_dict)
                     case _:
                         raise NotImplementedError()
                 assert batch_size == x.shape[0]
-                theta_loc, theta_scale = self.encoder(x)
+                raw_pred = self.encoder(x)
             else:
-                theta_loc = pyro.param("param_theta_loc", 
-                                    lambda: (torch.rand(batch_size, self.theta_dim, device=self.device) - 0.5) * 20)
-                theta_scale = pyro.param("param_theta_scale", 
-                                        lambda: (torch.rand(batch_size, self.theta_dim, device=self.device) + 1e-3) * 100, 
+                raw_pred1 = pyro.param("param_theta1", 
+                                       lambda: (torch.rand(batch_size, 
+                                                           self.theta_dim, 
+                                                           device=self.device) - 0.5) * 20)
+                raw_pred2 = pyro.param("param_theta2", 
+                                        lambda: (torch.rand(batch_size, 
+                                                            self.theta_dim, 
+                                                            device=self.device) + 1e-3) * 100, 
                                         constraint=dist.constraints.positive)
+                raw_pred = torch.stack([raw_pred1, raw_pred2], dim=-1)
         else:
-            theta_loc = self.fixed_theta_loc
-            theta_scale = self.fixed_theta_scale
+            raw_pred = self.fixed_raw_pred
 
         plates = self.get_plates(batch_size, sample_dict)
         for kp, p in plates.items():
             assert isinstance(p, WrappedPlate), f"plate {kp} is not WrappedPlate"
-        cur_size = 0
         for latent_name, latent_details in self.sample_dict_instr["latent"].items():
             cur_plates = [plates[p] for p in latent_details["plates"]]
             with contextlib.ExitStack() as s:
                 cms = [s.enter_context(p) for p in cur_plates]
-                event_shape = OrderedDict([(f"e{i}", e) for i, e in enumerate(latent_details["event_shape"])])
-                event_tag = " ".join(list(event_shape.keys()))
-                batch_shape = OrderedDict([(f"b{i}", b) for i, b in enumerate(latent_details["batch_shape"][:-1])])
-                batch_tag = " ".join(list(batch_shape.keys()))
-                if event_tag == "" and batch_tag == "":
-                    distri = dist.Normal(theta_loc[:, cur_size], theta_scale[:, cur_size])
-                else:
-                    distri = dist.Normal(
-                        loc=rearrange(theta_loc[:, cur_size:(cur_size + latent_details["latent_size"])],
-                                    f"b ({batch_tag} {event_tag}) -> {batch_tag} b {event_tag}",
-                                    **event_shape, **batch_shape),
-                        scale=rearrange(theta_scale[:, cur_size:(cur_size + latent_details["latent_size"])],
-                                        f"b ({batch_tag} {event_tag}) -> {batch_tag} b {event_tag}",
-                                        **event_shape, **batch_shape),
-                    )
-                if len(latent_details["event_shape"]) > 0:
-                    distri = distri.to_event(len(latent_details["event_shape"]))
+                distri = self.variational_dist.return_dist(raw_pred, latent_name)
                 pyro.sample(latent_name, distri)
-                cur_size += latent_details["latent_size"]
     
     def _extract_x_func(self, sample_dict):
+        if self.special_x_process_flag:
+            assert len(self.sample_dict_instr["obs"].keys()) == 1
+            x = sample_dict[list(self.sample_dict_instr["obs"].keys())[0]]
+            assert x.ndim == 2
+            return x
         x = []
         for data_name in self.sample_dict_instr["data"]:
             x.append(rearrange(sample_dict[data_name], "... b -> b (...)"))
@@ -362,7 +205,12 @@ class BaseVAEwRegister(BaseVAE):
             x.append(rearrange(sample_dict[obs_name], f"... b {event_shape} -> b (... {event_shape})"))
         return torch.cat(x, dim=-1)
     
-    def extract_x_for_set_transformer(self, batch_size, sample_dict):
+    def extract_x_as_set(self, batch_size, sample_dict):
+        if self.special_x_process_flag:
+            assert len(self.sample_dict_instr["obs"].keys()) == 1
+            x = sample_dict[list(self.sample_dict_instr["obs"].keys())[0]]
+            assert x.ndim == 2
+            return x.unsqueeze(-1)
         x = []
         assert "N" in self.sample_dict_instr["meta_data"]
         N = sample_dict["N"]
@@ -432,6 +280,7 @@ class BaseVAEwRegister(BaseVAE):
             assert name not in self.sample_dict_instr["latent"]
             self.sample_dict_instr["latent"][name] = {
                 "dist": type(sample_dist),
+                "constraint": sample_dist.support,
                 "batch_shape": batch_shape,
                 "event_shape": event_shape,
                 "latent_size": None,
@@ -461,8 +310,10 @@ class BaseVAEwRegister(BaseVAE):
         return sample
 
     def do_register(self, batch_size):
+        assert not self.already_registered
         sample_dict = self.generate_sample_dict(batch_size)
         self.extract_theta(sample_dict)
+        self.variational_dist = VariationalDist(self.sample_dict_instr)
         self.already_registered = True
     
     def scalar_normal_dist(self, loc, scale):

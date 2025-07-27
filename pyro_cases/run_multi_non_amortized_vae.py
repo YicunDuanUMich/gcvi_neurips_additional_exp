@@ -8,8 +8,8 @@ import time
 from pathlib import Path
 from termcolor import colored
 
-from pyro_cases.run import vae_dict
-from pyro_cases.run_non_amoretized_vae import train_and_test_non_amortized_vae
+from pyro_cases.utils.vae_dict import vae_dict
+from pyro_cases.utils.run_non_amoretized_vae import train_and_test_non_amortized_vae
 
 
 def my_worker(kwargs):

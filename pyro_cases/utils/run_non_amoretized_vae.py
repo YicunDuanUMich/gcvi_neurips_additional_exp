@@ -8,29 +8,34 @@ import tqdm
 from termcolor import colored
 
 import pyro
-import pyro.distributions as dist
 from pyro.infer import SVI, Trace_ELBO
 from pyro.optim import ClippedAdam
 
-from pyro_cases.base_vae import BaseVAE, BaseVAEwRegister
-from pyro_cases.run import vae_dict
+from pyro_cases.utils.base_vae import BaseVAEwRegister
+from pyro_cases.utils.vae_dict import vae_dict
 
 INIT_SEED = 10_000
 
-def get_vsbc(vae: BaseVAE, sample_dict):
+def get_vsbc(vae: BaseVAEwRegister, sample_dict):
     true_theta = vae.extract_theta(sample_dict)
+    raw_pred1 = pyro.param("param_theta1").detach()
+    raw_pred2 = pyro.param("param_theta2").detach()
+    raw_pred = torch.stack([raw_pred1, raw_pred2], dim=-1)
+    vsbc = vae.variational_dist.get_vsbc(raw_pred, true_theta)
+    return vsbc.permute([1, 0]).cpu()  # (k, num_obs)
 
-    est_theta_loc, est_theta_scale = pyro.param("param_theta_loc").detach(), pyro.param("param_theta_scale").detach()
-    est_dist = dist.Normal(est_theta_loc, est_theta_scale)
-    return (1 - est_dist.cdf(true_theta)).permute([1, 0]).cpu()  # (k, num_obs)
-
-def compare_ref_and_est(vae: BaseVAE, sample_dict, test_seed):
+def compare_ref_and_est(vae: BaseVAEwRegister, sample_dict, test_seed):
     obs, theta = vae.extract_x(sample_dict), vae.extract_theta(sample_dict)
+    raw_pred1 = pyro.param("param_theta1").detach()
+    raw_pred2 = pyro.param("param_theta2").detach()
+    raw_pred = torch.stack([raw_pred1, raw_pred2], dim=-1)
+    est_theta1, est_theta2 = vae.variational_dist.get_theta(raw_pred)
     return {
         "obs_seed": test_seed,
         "obs": obs.cpu(),
-        "est_sigma2": (pyro.param("param_theta_scale").detach() ** 2).cpu(),
-        "est_mu": pyro.param("param_theta_loc").detach().cpu(),
+        "est_theta1": est_theta1.cpu(),
+        "est_theta2": est_theta2.cpu(),
+        "raw_pred": raw_pred.cpu(),
         "true_theta": theta.cpu(),
     }
 
@@ -54,6 +59,7 @@ def train_and_test_non_amortized_vae(task_name,
     else:
         raise NotImplementedError()
     vae = vae(hidden_dim=1, use_neural_network=False).to(device=device)
+    vae.do_register(num_test_obs)
     elbo_optimizer = ClippedAdam({"lr": lr, 
                                   "clip_norm": 1.0,
                                   "lrd": 0.9997})
@@ -69,8 +75,6 @@ def train_and_test_non_amortized_vae(task_name,
     elbo_training_loss = []
     iterations = range(steps) if not show_progress else tqdm.tqdm(list(range(steps)))
     elbo_error = None
-    if isinstance(vae, BaseVAEwRegister):
-        vae.do_register(num_test_obs)
     
     pyro.set_rng_seed(test_seed)
     sample_dict = vae.generate_sample_dict(batch_size=num_test_obs)
@@ -99,11 +103,11 @@ def train_and_test_non_amortized_vae(task_name,
     if elbo_error is None:
         elbo_vae = elbo_vae.eval()
         # direct
-        elbo_test_dict_list = compare_ref_and_est(elbo_vae, sample_dict, test_seed)
+        elbo_test_result_dict = compare_ref_and_est(elbo_vae, sample_dict, test_seed)
         # vsbc
         elbo_vsbc = get_vsbc(elbo_vae, sample_dict)
     else:
-        elbo_test_dict_list = None
+        elbo_test_result_dict = None
         elbo_vsbc = None
 
     task_end_time = time.ctime()
@@ -118,7 +122,8 @@ def train_and_test_non_amortized_vae(task_name,
         "seed": seed,
         "task": task_name,
         "elbo_training_loss": elbo_training_loss, 
-        "elbo_test_dict_list": elbo_test_dict_list,
+        "elbo_test_sample_dict": sample_dict,
+        "elbo_test_result_dict": elbo_test_result_dict,
         "elbo_vae": elbo_vae.cpu() if return_vae else None,
         "elbo_vsbc": elbo_vsbc,
         "elbo_error": elbo_error,

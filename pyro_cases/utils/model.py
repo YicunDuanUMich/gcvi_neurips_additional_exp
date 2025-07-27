@@ -6,8 +6,7 @@ import pyro.distributions as dist
 
 from einops import repeat, rearrange
 
-from pyro_cases.base_vae import (BaseVAE, 
-                                 BaseVAEwRegister, 
+from pyro_cases.utils.base_vae import (BaseVAEwRegister, 
                                  SampleDict, 
                                  MetaDataContext, 
                                  DataContext)
@@ -18,9 +17,15 @@ from pathlib import Path
 SBIBM_INSTALL_PATH = Path(sbibm.__file__).parent
 
 
-class GaussianLinearVAE(BaseVAE):
+class GaussianLinearVAE(BaseVAEwRegister):
     x_dim = 10
     theta_dim = 10
+    special_x_process_flag = True
+
+    def get_plates(self, batch_size, sample_dict):
+        return {
+            "plate_batch": self.plate("plate_batch", batch_size, dim=-1),
+        }
 
     def model(self, batch_size, sample_dict):
         if sample_dict is None:
@@ -28,43 +33,57 @@ class GaussianLinearVAE(BaseVAE):
         else:
             sample_dict = copy.copy(sample_dict)
 
-        with pyro.plate("plate_batch", batch_size):
+        plates = self.get_plates(batch_size, sample_dict)
+        with plates["plate_batch"]:
             theta_loc = torch.zeros((self.theta_dim, ), device=self.device)
             theta_cov = 0.1 * torch.eye(self.theta_dim, device=self.device)
-            sample_dict["theta"] = pyro.sample("latent", dist.MultivariateNormal(loc=theta_loc,
-                                                                                 covariance_matrix=theta_cov))
-            sample_dict["x"] = pyro.sample("obs", 
+            sample_dict["theta"] = self.r_sample("theta", dist.MultivariateNormal(loc=theta_loc,
+                                                                                   covariance_matrix=theta_cov))
+            sample_dict["x"] = self.r_obs("x", 
                                             dist.MultivariateNormal(loc=sample_dict["theta"], covariance_matrix=theta_cov), 
                                             obs=sample_dict.get("x", None))
         return sample_dict
             
 
-class GaussianLinearUniformVAE(BaseVAE):
+class GaussianLinearUniformVAE(BaseVAEwRegister):
     x_dim = 10
     theta_dim = 10
+    special_x_process_flag = True
+
+    def get_plates(self, batch_size, sample_dict):
+        return {
+            "plate_batch": self.plate("plate_batch", batch_size, dim=-1),
+        }
 
     def model(self, batch_size, sample_dict):
         if sample_dict is None:
             sample_dict = {}
         else:
             sample_dict = copy.copy(sample_dict)
-
-        with pyro.plate("plate_batch", batch_size):
-            theta_loc = torch.zeros((self.theta_dim, ), device=self.device)
-            theta_cov = torch.eye(self.theta_dim, device=self.device)
-            sample_dict["theta"] = pyro.sample("latent", dist.MultivariateNormal(loc=theta_loc,
-                                                                                 covariance_matrix=theta_cov))
-
+        
+        plates = self.get_plates(batch_size, sample_dict)
+        with plates["plate_batch"]:
+            sample_dict["theta"] = self.r_sample("theta", 
+                                                 dist.Uniform(torch.full((self.theta_dim, ), fill_value=-1.0, device=self.device),
+                                                              torch.full((self.theta_dim, ), fill_value=1.0, device=self.device)).to_event(1))
             cov_m = 0.1 * torch.eye(self.theta_dim, device=self.device)
-            sample_dict["x"] = pyro.sample("obs",
-                                           dist.MultivariateNormal(loc=sample_dict["theta"], covariance_matrix=cov_m),
+            sample_dict["x"] = self.r_obs("x",
+                                           dist.MultivariateNormal(loc=sample_dict["theta"], 
+                                                                   covariance_matrix=cov_m),
                                            obs=sample_dict.get("x", None))
         return sample_dict
                     
 
-class SLCPVAE(BaseVAE):
+class SLCPVAE(BaseVAEwRegister):
     x_dim = 8
     theta_dim = 5
+    special_x_process_flag = True
+
+    def get_plates(self, batch_size, sample_dict):
+        return {
+            "plate_batch": self.plate("plate_batch", batch_size, dim=-1),
+            "plate_r": self.plate("plate_r", 4, dim=-2),
+        }
 
     def model(self, batch_size, sample_dict):
         if sample_dict is None:
@@ -73,14 +92,11 @@ class SLCPVAE(BaseVAE):
             sample_dict = copy.copy(sample_dict)
             sample_dict["x"] = rearrange(sample_dict["x"], "b (r two) -> r b two", two=2)
         
-        plate_batch = pyro.plate("plate_batch", batch_size, dim=-1)
-        with plate_batch:
-            theta_loc = torch.zeros((self.theta_dim, ), device=self.device)
-            theta_cov = 0.25 * torch.eye(self.theta_dim, device=self.device)
-            sample_dict["theta"] = pyro.sample("latent", dist.MultivariateNormal(loc=theta_loc,
-                                                                                 covariance_matrix=theta_cov))
-        plate_r = pyro.plate("plate_r", 4, dim=-2)
-        with plate_batch, plate_r:
+        plates = self.get_plates(batch_size, sample_dict)
+        with plates["plate_batch"]:
+            sample_dict["theta"] = self.r_sample("theta", dist.Uniform(torch.full((self.theta_dim, ), fill_value=-3.0, device=self.device),
+                                                                       torch.full((self.theta_dim, ), fill_value=3.0, device=self.device)).to_event(1))
+        with plates["plate_batch"], plates["plate_r"]:
             m = torch.stack((sample_dict["theta"][..., 0], 
                              sample_dict["theta"][..., 1]), 
                              dim=-1)  # (..., b, 2)
@@ -99,7 +115,7 @@ class SLCPVAE(BaseVAE):
             S[..., 0, 0] += 1e-4
             S[..., 1, 1] += 1e-4
 
-            sample_dict["x"] = pyro.sample("obs",
+            sample_dict["x"] = self.r_obs("x",
                                             dist.MultivariateNormal(loc=m, covariance_matrix=S),
                                             obs=sample_dict.get("x", None))
             
@@ -138,9 +154,10 @@ class SLCPwDistractorVAE(SLCPVAE):
         return sample_dict
     
 
-class BeroulliGLMRAWVAE(BaseVAE):
+class BeroulliGLMRAWVAE(BaseVAEwRegister):
     x_dim = 100
     theta_dim = 10
+    special_x_process_flag = True
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -150,6 +167,11 @@ class BeroulliGLMRAWVAE(BaseVAE):
                              torch.load(SBIBM_INSTALL_PATH / "tasks/bernoulli_glm/files/stimulus_I.pt"))
         self.register_buffer("design_matrix",
                              torch.load(SBIBM_INSTALL_PATH / "tasks/bernoulli_glm/files/design_matrix.pt"))
+
+    def get_plates(self, batch_size, sample_dict):
+        return {
+            "plate_batch": self.plate("plate_batch", batch_size, dim=-1),
+        }
         
     def model(self, batch_size, sample_dict):
         if sample_dict is None:
@@ -157,7 +179,8 @@ class BeroulliGLMRAWVAE(BaseVAE):
         else:
             sample_dict = copy.copy(sample_dict)
 
-        with pyro.plate("plate_batch", batch_size):
+        plates = self.get_plates(batch_size, sample_dict)
+        with plates["plate_batch"]:
             M = self.theta_dim - 1
             m_D = torch.diag(torch.ones(M)) - torch.diag(torch.ones(M - 1), -1)
             m_F = torch.matmul(m_D, m_D) + torch.diag(1.0 * torch.arange(M) / (M)) ** 0.5
@@ -165,15 +188,15 @@ class BeroulliGLMRAWVAE(BaseVAE):
             Binv[0, 0] = 0.5  # offset
             Binv[1:, 1:] = torch.matmul(m_F.T, m_F)  # filter
             Binv = Binv.to(device=self.device)
-            sample_dict["theta"] = pyro.sample("latent", 
-                                               dist.MultivariateNormal(loc=torch.zeros((M + 1, ), device=self.device),
-                                                                       precision_matrix=Binv))
+            sample_dict["theta"] = self.r_sample("theta", 
+                                                dist.MultivariateNormal(loc=torch.zeros((M + 1, ), device=self.device),
+                                                                        precision_matrix=Binv))
         
             # Simulate GLM
             psi = torch.matmul(rearrange(self.design_matrix, "k1 k2 -> 1 k1 k2"),
                                rearrange(sample_dict["theta"], "b k -> b k 1")).squeeze(-1)
             z = 1 / (1 + torch.exp(-psi))  # (b, 100)
-            sample_dict["x"] = pyro.sample("obs",
+            sample_dict["x"] = self.r_obs("x",
                                             dist.Bernoulli(z).to_event(1),
                                             obs=sample_dict.get("x", None))  # (b, 100)
         return sample_dict
@@ -199,10 +222,19 @@ class BernoulliGLMVAE(BeroulliGLMRAWVAE):
     def _extract_x_func(self, sample_dict):
         return sample_dict["stat"]
 
+    def extract_x_as_set(self, batch_size, sample_dict):
+        return sample_dict["stat"].unsqueeze(-1)
 
-class GaussianMixtureVAE(BaseVAE):
+
+class GaussianMixtureVAE(BaseVAEwRegister):
     x_dim = 2
     theta_dim = 2
+    special_x_process_flag = True
+
+    def get_plates(self, batch_size, sample_dict):
+        return {
+            "plate_batch": self.plate("plate_batch", batch_size, dim=-1),
+        }
 
     def model(self, batch_size, sample_dict):
         if sample_dict is None:
@@ -210,27 +242,29 @@ class GaussianMixtureVAE(BaseVAE):
         else:
             sample_dict = copy.copy(sample_dict)
 
-        with pyro.plate("plate_batch", batch_size):
-            theta_loc = torch.zeros((self.theta_dim, ), device=self.device)
-            theta_cov = 9 * torch.eye(self.theta_dim, device=self.device)
-            sample_dict["theta"] = pyro.sample("latent", dist.MultivariateNormal(loc=theta_loc,
-                                                                                 covariance_matrix=theta_cov))
-            
+        plates = self.get_plates(batch_size, sample_dict)
+        with plates["plate_batch"]:
+            sample_dict["theta"] = self.r_sample("theta", dist.Uniform(torch.full((self.theta_dim, ), fill_value=-10.0, device=self.device),
+                                                                        torch.full((self.theta_dim, ), fill_value=10.0, device=self.device)).to_event(1))
             idx = (torch.rand((batch_size, 1), device=self.device) > 0.5).long()
-
             # Select loc and scales according to mixture index
             loc = torch.tensor([1.0, 1.0], device=self.device)[idx] * sample_dict["theta"]
             scale = torch.tensor([1.0, 0.1], device=self.device)[idx]
-
-            sample_dict["x"] = pyro.sample("obs", 
+            sample_dict["x"] = self.r_obs("x", 
                                            dist.Normal(loc=loc, scale=scale).to_event(1),
                                            obs=sample_dict.get("x", None))
         return sample_dict
 
 
-class TwoMoonsVAE(BaseVAE):
+class TwoMoonsVAE(BaseVAEwRegister):
     x_dim = 2
     theta_dim = 2
+    special_x_process_flag = True
+
+    def get_plates(self, batch_size, sample_dict):
+        return {
+            "plate_batch": self.plate("plate_batch", batch_size, dim=-1),
+        }
 
     def model(self, batch_size, sample_dict):
         ori_sample_dict_is_none = False
@@ -240,27 +274,33 @@ class TwoMoonsVAE(BaseVAE):
         else:
             sample_dict = copy.copy(sample_dict)
 
-        with pyro.plate("plate_batch", batch_size):
-            theta_loc = torch.zeros((self.theta_dim, ), device=self.device)
-            theta_cov = 0.25 * torch.eye(self.theta_dim, device=self.device)
-            sample_dict["theta"] = pyro.sample("latent", dist.MultivariateNormal(loc=theta_loc,
-                                                                                 covariance_matrix=theta_cov))
+        plates = self.get_plates(batch_size, sample_dict)
+        with plates["plate_batch"]:
+            sample_dict["theta"] = self.r_sample("theta", dist.Uniform(torch.full((self.theta_dim, ), fill_value=-1.0, device=self.device),
+                                                                        torch.full((self.theta_dim, ), fill_value=1.0, device=self.device)).to_event(1))
             if ori_sample_dict_is_none:
                 r = torch.randn_like(sample_dict["theta"][:, 0]) * 0.01 + 0.1
                 alpha = (torch.rand_like(sample_dict["theta"][:, 0]) - 0.5) * torch.pi
                 x1 = r * torch.cos(alpha) + 0.25 - torch.abs(sample_dict["theta"].sum(dim=-1)) / math.sqrt(2)
                 x2 = r * torch.sin(alpha) + (sample_dict["theta"][:, 1] - sample_dict["theta"][:, 0]) / math.sqrt(2)
                 sample_dict["x"] = torch.stack([x1, x2], dim=-1)
-                return sample_dict
+                if self.already_registered:
+                    return sample_dict
             
             r2 = (sample_dict["x"][:, 0] - 0.25 + torch.abs(sample_dict["theta"].sum(dim=-1)) / math.sqrt(2)) ** 2 + \
                  (sample_dict["x"][:, 1] - (sample_dict["theta"][:, 1] - sample_dict["theta"][:, 0]) / math.sqrt(2)) ** 2
             r = torch.sqrt(r2)
-            pyro.sample("r", 
+            self.r_obs("r", 
                         dist.Normal(loc=0.1 * torch.ones_like(r),
                                     scale=0.01 * torch.ones_like(r)),
                         obs=r)
         return sample_dict
+
+    def _extract_x_func(self, sample_dict):
+        return sample_dict["x"]
+
+    def extract_x_as_set(self, batch_size, sample_dict):
+        return sample_dict["x"].unsqueeze(-1)
 
 
 class ARM_anova_randon_nopred(BaseVAEwRegister):

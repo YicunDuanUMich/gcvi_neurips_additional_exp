@@ -8,12 +8,12 @@ import time
 from pathlib import Path
 from termcolor import colored
 
-from pyro_cases.run import vae_dict
-from pyro_cases.run_favi import train_and_test_favi
+from pyro_cases.utils.vae_dict import vae_dict
+from pyro_cases.utils.run_amortized_favi import train_and_test_amortized_favi
 
 
 def my_worker(kwargs):
-    return train_and_test_favi(**kwargs)
+    return train_and_test_amortized_favi(**kwargs)
 
 def process_task(tags, task_params_nested_list, least_tasks_per_chunk):
     results = []

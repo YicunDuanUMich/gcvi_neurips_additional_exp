@@ -1,7 +1,3 @@
-import math
-import torch
-import torch.nn as nn
-
 '''Source: https://github.com/juho-lee/set_transformer/blob/master/modules.py'''
 import torch
 import torch.nn as nn
@@ -93,6 +89,7 @@ class SetTransformer(nn.Module):
         )
         self.final_linear = nn.Linear(in_features=hidden_dim, out_features=2)
         torch.nn.init.zeros_(self.final_linear.weight)
+        torch.nn.init.zeros_(self.final_linear.bias)
 
         self.scale = 1 / math.sqrt(hidden_dim)
 
@@ -100,20 +97,7 @@ class SetTransformer(nn.Module):
     def device(self):
         return self.dummy_param.device
     
-    @classmethod
-    def eta_to_mu_sigma2(cls, eta1, eta2):
-        sigma2 = -1 / (2 * eta2)
-        mu = eta1 * sigma2
-        return mu, sigma2
-    
-    @classmethod
-    def gaussian_log_density_natural(cls, eta1, eta2, x):
-        return eta1 * x + \
-               eta2 * (x ** 2) + \
-               (eta1 ** 2) / (4 * eta2) + \
-               0.5 * torch.log(-eta2 / torch.pi)
-
-    def get_eta(self, x):
+    def forward(self, x):
         assert x.ndim == 3
         if self.input_process is None:
             self.input_process = nn.Sequential(
@@ -125,16 +109,76 @@ class SetTransformer(nn.Module):
         x = self.enc(x)
         out = self.final_linear(self.dec(x))
         out = out * self.scale
-        eta1, eta2 = out[..., 0], out[..., 1]
-        eta2 = (eta2 - 1.0).clamp(min=-1000.0, max=-0.1)
-        return eta1, eta2
+        return out
+
+
+class DenseEncoderGaussian(nn.Module):
+    def __init__(self, n_out, hidden_dim):
+        super().__init__()
+
+        self.hidden_dim = hidden_dim
+        self.register_buffer("dummy_param", torch.zeros(0))
+        self.linear1 = None
+        # self.linear1 = nn.Linear(in_dim, hidden_dim, bias=False)
+        self.linear2 = nn.Linear(hidden_dim, n_out * 2, bias=False)
+        self.relu = nn.ReLU()
+
+        # Follow proper initialization from our paper
+        torch.nn.init.normal_(self.linear1.weight)
+        torch.nn.init.zeros_(self.linear2.weight)
+
+    @property
+    def device(self):
+        return self.dummy_param.device
+
+    def forward(self, x):
+        assert x.ndim == 2
+        if self.linear1 is None:
+            self.linear1 = nn.Linear(x.shape[-1], self.hidden_dim, bias=False).to(device=self.device)
+        x = self.linear1(x)
+        x = self.relu(x)
+        x = self.linear2(x)
+        x = x * 1 / math.sqrt(self.hidden_dim)
+        return x.view(x.shape[0], -1, 2)
+
+
+class DeepSetMLP(nn.Module):
+    def __init__(self, n_out, hidden_dim, n_layers):
+        super().__init__()
+
+        self.input_process = None
+        self.hidden_dim = hidden_dim
+        self.register_buffer("dummy_param", torch.zeros(0))
+        self.enc = nn.Sequential(
+            *[nn.Sequential(nn.Linear(hidden_dim, hidden_dim), 
+                            nn.SELU()) 
+              for _ in range(n_layers)]
+        )
+        self.dec = nn.Sequential(
+            *[nn.Sequential(nn.Linear(hidden_dim, hidden_dim), 
+                            nn.SELU()) 
+              for _ in range(n_layers)]
+        )
+        self.final_linear = nn.Linear(in_features=hidden_dim, out_features=n_out * 2)
+        torch.nn.init.zeros_(self.final_linear.weight)
+        torch.nn.init.zeros_(self.final_linear.bias)
+
+        self.scale = 1 / math.sqrt(hidden_dim)
+
+    @property
+    def device(self):
+        return self.dummy_param.device
     
     def forward(self, x):
-        eta1, eta2 = self.get_eta(x)
-        mu, sigma2 = self.eta_to_mu_sigma2(eta1, eta2)
-        return mu, sigma2.sqrt()
-
-    def batch_favi_loss(self, theta, x):
-        eta1, eta2 = self.get_eta(x)
-        log_dens = self.gaussian_log_density_natural(eta1, eta2, theta)
-        return -(log_dens.sum(dim=-1))
+        assert x.ndim == 3
+        if self.input_process is None:
+            self.input_process = nn.Sequential(
+                nn.Linear(x.shape[-1], self.hidden_dim),
+                nn.SELU(),
+            ).to(device=self.device)
+        x = self.input_process(x)
+        x = self.enc(x)  # (b, n, c)
+        x = torch.sum(x, dim=1)  # (b, c)
+        out = self.final_linear(self.dec(x))
+        out = out * self.scale
+        return out.view(out.shape[0], -1, 2)
