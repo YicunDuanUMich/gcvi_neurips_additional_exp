@@ -203,7 +203,7 @@ class LogNormalFactor(VariationalFactor):
                                                                                scale=1)])
     
     def batch_favi_loss(self, theta, raw_pred):
-        assert theta.min() > 0.0
+        assert theta.min() > self.low
         eta1, eta2 = self.get_eta(raw_pred)
         mu, sigma2 = self.eta_to_mu_sigma2(eta1, eta2)
         assert mu.shape == theta.shape
