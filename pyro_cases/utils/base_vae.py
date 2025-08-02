@@ -192,17 +192,19 @@ class BaseVAEwRegister(BaseVAE):
                 pyro.sample(latent_name, distri)
     
     def generate_fixed_design_matrix_and_theta(self, batch_size, example_sample_dict):
-        x_list = []
-        theta_list = []
-        s_dict = copy.copy(example_sample_dict)
-        for obs_name in self.sample_dict_instr["obs"].keys():
-            s_dict.pop(obs_name)
-        for _ in range(batch_size):
-            g_s_dict = self.model(batch_size=1, sample_dict=s_dict)
-            x_list.append(self.extract_x_as_set(batch_size=1, sample_dict=g_s_dict))
-            theta_list.append(self.extract_theta(g_s_dict))
-        x = torch.cat(x_list, dim=0)
-        theta = torch.cat(theta_list, dim=0)
+        if not self.special_x_process_flag:
+            s_dict = copy.copy(example_sample_dict)
+            for obs_name in self.sample_dict_instr["obs"].keys():
+                s_dict.pop(obs_name)
+            for data_name in self.sample_dict_instr["data"]:
+                assert s_dict[data_name].shape[-1] == 1
+                s_dict[data_name] = repeat(s_dict[data_name], "... 1 -> ... b", b=batch_size)
+        else:
+            assert not bool(self.sample_dict_instr["data"]), "data dict should be empty"
+            s_dict = self.model(batch_size, sample_dict=None)
+        g_s_dict = self.model(batch_size=batch_size, sample_dict=s_dict)
+        x = self.extract_x_as_set(batch_size=batch_size, sample_dict=g_s_dict)
+        theta = self.extract_theta(g_s_dict)
         return x, theta
     
     def _extract_x_func(self, sample_dict):
