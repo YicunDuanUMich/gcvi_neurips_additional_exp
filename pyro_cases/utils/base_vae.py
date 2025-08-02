@@ -199,7 +199,7 @@ class BaseVAEwRegister(BaseVAE):
             s_dict.pop(obs_name)
         for _ in range(batch_size):
             g_s_dict = self.model(batch_size=1, sample_dict=s_dict)
-            x_list.append(self.extract_x_as_set(g_s_dict))
+            x_list.append(self.extract_x_as_set(batch_size=1, sample_dict=g_s_dict))
             theta_list.append(self.extract_theta(g_s_dict))
         x = torch.cat(x_list, dim=0)
         theta = torch.cat(theta_list, dim=0)
