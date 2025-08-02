@@ -191,6 +191,20 @@ class BaseVAEwRegister(BaseVAE):
                 distri = self.variational_dist.return_dist(raw_pred, latent_name)
                 pyro.sample(latent_name, distri)
     
+    def generate_fixed_design_matrix_and_theta(self, batch_size, example_sample_dict):
+        x_list = []
+        theta_list = []
+        s_dict = copy.copy(example_sample_dict)
+        for obs_name in self.sample_dict_instr["obs"].keys():
+            s_dict.pop(obs_name)
+        for _ in range(batch_size):
+            g_s_dict = self.model(batch_size=1, sample_dict=s_dict)
+            x_list.append(self.extract_x_as_set(g_s_dict))
+            theta_list.append(self.extract_theta(g_s_dict))
+        x = torch.cat(x_list, dim=0)
+        theta = torch.cat(theta_list, dim=0)
+        return x, theta
+    
     def _extract_x_func(self, sample_dict):
         if self.special_x_process_flag:
             assert len(self.sample_dict_instr["obs"].keys()) == 1

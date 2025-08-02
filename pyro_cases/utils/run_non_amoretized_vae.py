@@ -14,8 +14,6 @@ from pyro.optim import ClippedAdam
 from pyro_cases.utils.base_vae import BaseVAEwRegister
 from pyro_cases.utils.vae_dict import vae_dict
 
-INIT_SEED = 10_000
-
 def get_vsbc(vae: BaseVAEwRegister, sample_dict):
     true_theta = vae.extract_theta(sample_dict)
     raw_pred1 = pyro.param("param_theta1").detach()
@@ -37,6 +35,12 @@ def compare_ref_and_est(vae: BaseVAEwRegister, sample_dict, test_seed):
         "est_theta2": est_theta2.cpu(),
         "raw_pred": raw_pred.cpu(),
         "true_theta": theta.cpu(),
+    }
+
+def move_dict_to_cpu(pre_dict: dict):
+    return {
+        k: v.to(device="cpu") if isinstance(v, torch.Tensor) else v
+        for k, v in pre_dict.items()
     }
 
 def train_and_test_non_amortized_vae(task_name, 
@@ -122,7 +126,7 @@ def train_and_test_non_amortized_vae(task_name,
         "seed": seed,
         "task": task_name,
         "elbo_training_loss": elbo_training_loss, 
-        "elbo_test_sample_dict": sample_dict,
+        "elbo_test_sample_dict": move_dict_to_cpu(sample_dict),
         "elbo_test_result_dict": elbo_test_result_dict,
         "elbo_vae": elbo_vae.cpu() if return_vae else None,
         "elbo_vsbc": elbo_vsbc,

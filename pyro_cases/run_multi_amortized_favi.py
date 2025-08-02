@@ -4,15 +4,22 @@ import multiprocessing
 import gc
 import click
 import time
+import copy
 
 from pathlib import Path
 from termcolor import colored
 
 from pyro_cases.utils.vae_dict import vae_dict
 from pyro_cases.utils.run_amortized_favi import train_and_test_amortized_favi
+from pyro_cases.utils.run_amortized_favi_with_fixed_design import train_and_test_amortized_favi_with_fixed_design
 
 
 def my_worker(kwargs):
+    kwargs = copy.copy(kwargs)
+    use_fixed_design = kwargs.pop("use_fixed_design")
+    assert use_fixed_design is not None
+    if use_fixed_design:
+        return train_and_test_amortized_favi_with_fixed_design(**kwargs)
     return train_and_test_amortized_favi(**kwargs)
 
 def process_task(tags, task_params_nested_list, least_tasks_per_chunk):
@@ -46,8 +53,9 @@ def process_task(tags, task_params_nested_list, least_tasks_per_chunk):
 @click.option("--save-path", type=str, help="path to output file")
 @click.option("--repeat-times", type=int)
 @click.option("--nn-type", type=str)
+@click.option("--use-fixed-design", is_flag=True)
 @click.option("--max-processes-per-gpu", type=int, default=4)
-def main(save_path, repeat_times, nn_type, max_processes_per_gpu):
+def main(save_path, repeat_times, nn_type, use_fixed_design, max_processes_per_gpu):
     task_names = list(vae_dict.keys())
     save_path = Path(save_path)
     
@@ -89,6 +97,7 @@ def main(save_path, repeat_times, nn_type, max_processes_per_gpu):
                     "return_vae": False,
                     "suppress_error": True,
                     "nn_type": nn_type,
+                    "use_fixed_design": use_fixed_design,
                 }
             )
     

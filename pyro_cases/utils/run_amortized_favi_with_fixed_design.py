@@ -13,25 +13,23 @@ import pyro
 from pyro_cases.utils.base_vae import BaseVAEwRegister
 from pyro_cases.utils.vae_dict import vae_dict
 
-def get_vsbc(vae: BaseVAEwRegister, batch_size, sample_dict):
-    obs, true_theta = vae.extract_x_as_set(batch_size, sample_dict), vae.extract_theta(sample_dict)
+def get_vsbc(vae: BaseVAEwRegister, x, theta):
     with torch.no_grad():
-        raw_pred = vae.encoder(obs)
-    vsbc = vae.variational_dist.get_vsbc(raw_pred, true_theta)
+        raw_pred = vae.encoder(x)
+    vsbc = vae.variational_dist.get_vsbc(raw_pred, theta)
     return vsbc.permute([1, 0]).cpu()  # (k, num_obs)
 
-def compare_ref_and_est(vae: BaseVAEwRegister, batch_size, sample_dict, test_seed):
-    obs, true_theta = vae.extract_x_as_set(batch_size, sample_dict), vae.extract_theta(sample_dict)
+def compare_ref_and_est(vae: BaseVAEwRegister, x, theta, test_seed):
     with torch.no_grad():
-        raw_pred = vae.encoder(obs)
+        raw_pred = vae.encoder(x)
     est_theta1, est_theta2 = vae.variational_dist.get_theta(raw_pred)
     return {
         "obs_seed": test_seed,
-        "obs": obs.cpu(),
+        "obs": x.cpu(),
         "est_theta1": est_theta1.cpu(),
         "est_theta2": est_theta2.cpu(),
         "raw_pred": raw_pred.cpu(),
-        "true_theta": true_theta.cpu(),
+        "true_theta": theta.cpu(),
     }
 
 def move_dict_to_cpu(pre_dict: dict):
@@ -46,28 +44,30 @@ class NullScheduler:
         pass
 
 
-def train_and_test_amortized_favi(task_name, 
-                                    seed, 
-                                    device, 
-                                    lr, 
-                                    lr_schedule,
-                                    batch_size,
-                                    network_width,
-                                    steps,
-                                    test_seed,
-                                    num_test_obs,
-                                    show_progress,
-                                    silent=False,
-                                    return_vae=False,
-                                    suppress_error=True,
-                                    nn_type="set_transformer"):
+def train_and_test_amortized_favi_with_fixed_design(task_name, 
+                                                    seed, 
+                                                    device, 
+                                                    lr, 
+                                                    lr_schedule,
+                                                    batch_size,
+                                                    network_width,
+                                                    steps,
+                                                    test_seed,
+                                                    num_test_obs,
+                                                    show_progress,
+                                                    silent=False,
+                                                    return_vae=False,
+                                                    suppress_error=True,
+                                                    nn_type="set_transformer"):
     pyro.clear_param_store()
 
     if task_name in vae_dict:
         vae = vae_dict[task_name]
     else:
         raise NotImplementedError()
-    vae = vae(hidden_dim=network_width, use_neural_network=True, nn_type=nn_type).to(device=device)
+    vae: BaseVAEwRegister = vae(hidden_dim=network_width, 
+                                use_neural_network=True, 
+                                nn_type=nn_type).to(device=device)
     vae.do_register(batch_size)
     favi_encoder = copy.deepcopy(vae.encoder).to(device=device)
     favi_optimizer = optim.Adam(favi_encoder.parameters(),
@@ -110,7 +110,9 @@ def train_and_test_amortized_favi(task_name,
     start_time = time.time()
     
     pyro.set_rng_seed(test_seed)
-    test_sample_dict = vae.generate_sample_dict(batch_size=num_test_obs)
+    test_sample_dict = vae.generate_sample_dict(batch_size=1)
+    test_x, test_theta = vae.generate_fixed_design_matrix_and_theta(batch_size=num_test_obs, 
+                                                                    example_sample_dict=test_sample_dict)
 
     torch.manual_seed(seed)
     random.seed(seed)
@@ -120,10 +122,10 @@ def train_and_test_amortized_favi(task_name,
     iterations = range(steps) if not show_progress else tqdm.tqdm(list(range(steps)))
     favi_error = None
 
-    def run_one_iter(sample_dict):
+    def run_one_iter(x, theta):
         favi_optimizer.zero_grad()
-        favi_raw_pred = favi_encoder(vae.extract_x_as_set(batch_size, sample_dict))
-        favi_loss = vae.variational_dist.batch_favi_loss(vae.extract_theta(sample_dict), favi_raw_pred)
+        favi_raw_pred = favi_encoder(x)
+        favi_loss = vae.variational_dist.batch_favi_loss(theta, favi_raw_pred)
         favi_loss = favi_loss.mean()
         assert not torch.isnan(favi_loss).any()
         assert not torch.isinf(favi_loss).any()
@@ -134,17 +136,18 @@ def train_and_test_amortized_favi(task_name,
         favi_training_loss.append(favi_loss.item())
 
     for _ in iterations:
-        sample_dict = vae.generate_sample_dict(batch_size=batch_size)
+        sample_x, sample_theta = vae.generate_fixed_design_matrix_and_theta(batch_size=batch_size,
+                                                                            example_sample_dict=test_sample_dict)
         if suppress_error:
             try:
                 if favi_error is None:
-                    run_one_iter(sample_dict)
+                    run_one_iter(sample_x, sample_theta)
             except Exception as e:
                 if not silent:
                     print(colored(f"get exception during FAVI training:\n {e}", "red"))
                 favi_error = str(e)
         else:
-            run_one_iter(sample_dict)
+            run_one_iter(sample_x, sample_theta)
 
     favi_vae_wrap = copy.deepcopy(vae)
     favi_vae_wrap.encoder = favi_encoder
@@ -152,9 +155,9 @@ def train_and_test_amortized_favi(task_name,
     if favi_error is None:
         favi_vae_wrap = favi_vae_wrap.eval()
         # direct
-        favi_test_result_dict = compare_ref_and_est(favi_vae_wrap, num_test_obs, test_sample_dict, test_seed)
+        favi_test_result_dict = compare_ref_and_est(favi_vae_wrap, test_x, test_theta, test_seed)
         # vsbc
-        favi_vsbc = get_vsbc(favi_vae_wrap, num_test_obs, test_sample_dict)
+        favi_vsbc = get_vsbc(favi_vae_wrap, test_x, test_theta)
     else:
         favi_test_result_dict = None
         favi_vsbc = None

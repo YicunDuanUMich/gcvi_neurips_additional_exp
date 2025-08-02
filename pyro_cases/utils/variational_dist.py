@@ -329,6 +329,32 @@ class VariationalDist:
             theta2_list.append(theta[1])
         return torch.cat(theta1_list, dim=-1), torch.cat(theta2_list, dim=-1)
     
+    # for testing
+    def get_mu_sigma2(self, raw_pred: torch.Tensor):
+        assert raw_pred.ndim == 3
+        assert raw_pred.shape[-1] == 2
+        assert raw_pred.shape[-2] == sum(self.latent_size)
+
+        mu_list = []
+        sigma2_list = []
+        for factor, sub_raw_pred in zip(self.variational_factors,
+                                        torch.split(raw_pred, self.latent_size, dim=1), 
+                                        strict=True):
+            theta = factor.get_est_theta(sub_raw_pred)
+            if isinstance(factor, NormalFactor):
+                mu_list.append(theta[0])
+                sigma2_list.append(theta[1])
+            elif isinstance(factor, BetaFactor):
+                alpha, beta = theta[0], theta[1]
+                mu_list.append(alpha / (alpha + beta))
+                sigma2_list.append(alpha * beta / (alpha + beta) ** 2 * (alpha + beta + 1))
+            elif isinstance(factor, LogNormalFactor):
+                mu_list.append(torch.exp(theta[0] + theta[1] / 2))
+                sigma2_list.append((torch.exp(theta[1]) - 1) * torch.exp(2 * theta[0] + theta[1]))
+            else:
+                raise NotImplementedError
+        return torch.cat(mu_list, dim=-1), torch.cat(sigma2_list, dim=-1)
+    
     # for vsbc testing
     def return_unrearranged_dist(self, raw_pred: torch.Tensor):
         assert raw_pred.ndim == 3
