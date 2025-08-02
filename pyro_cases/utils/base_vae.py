@@ -199,10 +199,10 @@ class BaseVAEwRegister(BaseVAE):
             for data_name in self.sample_dict_instr["data"]:
                 assert s_dict[data_name].shape[-1] == 1
                 s_dict[data_name] = repeat(s_dict[data_name], "... 1 -> ... b", b=batch_size)
+            g_s_dict = self.model(batch_size, sample_dict=s_dict)
         else:
             assert not bool(self.sample_dict_instr["data"]), "data dict should be empty"
-            s_dict = self.model(batch_size, sample_dict=None)
-        g_s_dict = self.model(batch_size=batch_size, sample_dict=s_dict)
+            g_s_dict = self.model(batch_size, sample_dict=None)
         x = self.extract_x_as_set(batch_size=batch_size, sample_dict=g_s_dict)
         theta = self.extract_theta(g_s_dict)
         return x, theta
