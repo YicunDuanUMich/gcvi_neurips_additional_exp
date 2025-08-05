@@ -111,8 +111,10 @@ def train_and_test_amortized_favi_with_fixed_design(task_name,
     
     pyro.set_rng_seed(test_seed)
     test_sample_dict = vae.generate_sample_dict(batch_size=1)
-    test_x, test_theta = vae.generate_fixed_design_matrix_and_theta(batch_size=num_test_obs, 
-                                                                    example_sample_dict=test_sample_dict)
+    expanded_test_sample_dict = vae.expand_sample_dict_w_fixed_design_matrix(batch_size=num_test_obs,
+                                                                             example_sample_dict=test_sample_dict)
+    test_x = vae.extract_x_as_set(batch_size=num_test_obs, sample_dict=expanded_test_sample_dict)
+    test_theta = vae.extract_theta(expanded_test_sample_dict)
 
     torch.manual_seed(seed)
     random.seed(seed)
@@ -174,7 +176,7 @@ def train_and_test_amortized_favi_with_fixed_design(task_name,
         "seed": seed,
         "task": task_name,
         "favi_training_loss": favi_training_loss,
-        "favi_test_sample_dict": move_dict_to_cpu(test_sample_dict),
+        "favi_test_sample_dict": move_dict_to_cpu(expanded_test_sample_dict),
         "favi_test_result_dict": favi_test_result_dict,
         "favi_vae_wrap": favi_vae_wrap.cpu() if return_vae else None,
         "favi_vsbc": favi_vsbc,

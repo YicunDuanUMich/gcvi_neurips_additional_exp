@@ -190,8 +190,8 @@ class BaseVAEwRegister(BaseVAE):
                 cms = [s.enter_context(p) for p in cur_plates]
                 distri = self.variational_dist.return_dist(raw_pred, latent_name)
                 pyro.sample(latent_name, distri)
-    
-    def generate_fixed_design_matrix_and_theta(self, batch_size, example_sample_dict):
+
+    def expand_sample_dict_w_fixed_design_matrix(self, batch_size, example_sample_dict):
         if not self.special_x_process_flag:
             s_dict = copy.copy(example_sample_dict)
             for obs_name in self.sample_dict_instr["obs"].keys():
@@ -203,6 +203,10 @@ class BaseVAEwRegister(BaseVAE):
         else:
             assert not bool(self.sample_dict_instr["data"]), "data dict should be empty"
             g_s_dict = self.model(batch_size, sample_dict=None)
+        return g_s_dict
+    
+    def generate_fixed_design_matrix_and_theta(self, batch_size, example_sample_dict):
+        g_s_dict = self.expand_sample_dict_w_fixed_design_matrix(batch_size, example_sample_dict)
         x = self.extract_x_as_set(batch_size=batch_size, sample_dict=g_s_dict)
         theta = self.extract_theta(g_s_dict)
         return x, theta
