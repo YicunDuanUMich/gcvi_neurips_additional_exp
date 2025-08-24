@@ -16,16 +16,16 @@ from pyro_cases.utils.vae_dict import vae_dict
 
 def get_vsbc(vae: BaseVAEwRegister, sample_dict):
     true_theta = vae.extract_theta(sample_dict)
-    raw_pred1 = pyro.param("param_theta1").detach()
-    raw_pred2 = pyro.param("param_theta2").detach()
+    raw_pred1 = pyro.param("my_param_raw_theta1").detach()
+    raw_pred2 = pyro.param("my_param_raw_theta2").detach()
     raw_pred = torch.stack([raw_pred1, raw_pred2], dim=-1)
     vsbc = vae.variational_dist.get_vsbc(raw_pred, true_theta)
     return vsbc.permute([1, 0]).cpu()  # (k, num_obs)
 
 def compare_ref_and_est(vae: BaseVAEwRegister, sample_dict, test_seed):
     obs, theta = vae.extract_x(sample_dict), vae.extract_theta(sample_dict)
-    raw_pred1 = pyro.param("param_theta1").detach()
-    raw_pred2 = pyro.param("param_theta2").detach()
+    raw_pred1 = pyro.param("my_param_raw_theta1").detach()
+    raw_pred2 = pyro.param("my_param_raw_theta2").detach()
     raw_pred = torch.stack([raw_pred1, raw_pred2], dim=-1)
     est_theta1, est_theta2 = vae.variational_dist.get_theta(raw_pred)
     return {
@@ -83,6 +83,7 @@ def train_and_test_non_amortized_vae(task_name,
     pyro.set_rng_seed(test_seed)
     sample_dict = vae.generate_sample_dict(batch_size=num_test_obs)
 
+    pyro.set_rng_seed(seed)
     torch.manual_seed(seed)
     random.seed(seed)
     np.random.seed(seed)

@@ -11,10 +11,9 @@ from pyro_cases.utils.base_vae import (BaseVAEwRegister,
                                  MetaDataContext, 
                                  DataContext)
 
-import sbibm
 from pathlib import Path
 
-SBIBM_INSTALL_PATH = Path(sbibm.__file__).parent
+SBIBM_INSTALL_PATH = Path().home() / "sbibm" / "sbibm"
 
 
 class GaussianLinearVAE(BaseVAEwRegister):
@@ -133,7 +132,8 @@ class SLCPwDistractorVAE(SLCPVAE):
         # from sbibm
         self.register_buffer("permutation_idx",
                              torch.load(SBIBM_INSTALL_PATH / "tasks/slcp/files/permutation_idx.torch"))
-        self.gmm = torch.load(SBIBM_INSTALL_PATH / "tasks/slcp/files/gmm.torch")
+        self.gmm = torch.load(SBIBM_INSTALL_PATH / "tasks/slcp/files/gmm.torch",
+                              weights_only=False)
         
     def model(self, batch_size, sample_dict):
         if sample_dict is not None:

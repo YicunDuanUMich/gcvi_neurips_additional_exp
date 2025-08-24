@@ -168,15 +168,20 @@ class BaseVAEwRegister(BaseVAE):
                 assert batch_size == x.shape[0]
                 raw_pred = self.encoder(x)
             else:
-                raw_pred1 = pyro.param("param_theta1", 
+                raw_pred1 = pyro.param("my_param_raw_theta1", 
                                        lambda: (torch.rand(batch_size, 
                                                            self.theta_dim, 
-                                                           device=self.device) - 0.5) * 20)
-                raw_pred2 = pyro.param("param_theta2", 
-                                        lambda: (torch.rand(batch_size, 
+                                                           device=self.device) - 0.5) * 10)
+                # raw_pred2 = pyro.param("my_param_raw_theta2", 
+                #                         lambda: torch.rand(batch_size, 
+                #                                             self.theta_dim, 
+                #                                             device=self.device) * -3, 
+                #                         constraint=dist.constraints.less_than(0.9))
+                raw_pred2 = pyro.param("my_param_raw_theta2", 
+                                        lambda: torch.rand(batch_size, 
                                                             self.theta_dim, 
-                                                            device=self.device) + 1e-3) * 100, 
-                                        constraint=dist.constraints.positive)
+                                                            device=self.device) * 0.5 + 0.1, 
+                                        constraint=dist.constraints.greater_than(0.001))
                 raw_pred = torch.stack([raw_pred1, raw_pred2], dim=-1)
         else:
             raw_pred = self.fixed_raw_pred
@@ -333,7 +338,8 @@ class BaseVAEwRegister(BaseVAE):
         assert not self.already_registered
         sample_dict = self.generate_sample_dict(batch_size)
         self.extract_theta(sample_dict)
-        self.variational_dist = VariationalDist(self.sample_dict_instr)
+        self.variational_dist = VariationalDist(self.sample_dict_instr, 
+                                                eta_param_for_normal=self.use_neural_network)
         self.already_registered = True
     
     def scalar_normal_dist(self, loc, scale):

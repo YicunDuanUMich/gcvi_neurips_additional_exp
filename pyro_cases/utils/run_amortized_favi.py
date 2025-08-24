@@ -112,6 +112,7 @@ def train_and_test_amortized_favi(task_name,
     pyro.set_rng_seed(test_seed)
     test_sample_dict = vae.generate_sample_dict(batch_size=num_test_obs)
 
+    pyro.set_rng_seed(seed)
     torch.manual_seed(seed)
     random.seed(seed)
     np.random.seed(seed)

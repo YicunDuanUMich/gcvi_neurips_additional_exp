@@ -112,6 +112,16 @@ class NormalFactor(VariationalFactor):
         return dist.Normal(loc=mu, scale=sigma2.sqrt())
     
 
+class NormalFactorMuSigmaParam(NormalFactor):
+    @classmethod
+    def get_eta(cls, raw_pred):
+        mu = raw_pred[..., 0]
+        sigma2 = raw_pred[..., 1] ** 2
+        eta1 = mu / sigma2
+        eta2 = -1 / (2 * sigma2)
+        return eta1, eta2
+
+
 class BetaFactor(VariationalFactor):
     def __init__(self, name, batch_shape, event_shape, *, low, high):
         super().__init__(name, batch_shape, event_shape)
@@ -243,9 +253,10 @@ class LogNormalFactor(VariationalFactor):
 
 
 class VariationalDist:
-    def __init__(self, sample_dict_instr):
+    def __init__(self, sample_dict_instr, *, eta_param_for_normal=True):
         self.variational_factors: list[VariationalFactor] = []
         self.latent_size: list[int] = []
+        self.eta_param_for_normal = eta_param_for_normal
         for k, v in sample_dict_instr["latent"].items():
             suitable_factor = self._get_factor_for_constraint(v["constraint"])
             self.variational_factors.append(suitable_factor(k, v["batch_shape"], v["event_shape"]))
@@ -255,7 +266,10 @@ class VariationalDist:
         if isinstance(constraint, torch_constraints.independent):
             return self._get_factor_for_constraint(constraint.base_constraint)
         elif isinstance(constraint, type(torch_constraints.real)):
-            return NormalFactor
+            if not self.eta_param_for_normal:
+                return NormalFactorMuSigmaParam
+            else:
+                return NormalFactor
         elif isinstance(constraint, torch_constraints.interval):
             assert isinstance(constraint.lower_bound, torch.Tensor)
             if constraint.lower_bound.ndim == 0:
@@ -341,7 +355,7 @@ class VariationalDist:
                                         torch.split(raw_pred, self.latent_size, dim=1), 
                                         strict=True):
             theta = factor.get_est_theta(sub_raw_pred)
-            if isinstance(factor, NormalFactor):
+            if isinstance(factor, (NormalFactor, NormalFactorMuSigmaParam)):
                 mu_list.append(theta[0])
                 sigma2_list.append(theta[1])
             elif isinstance(factor, BetaFactor):
@@ -352,7 +366,7 @@ class VariationalDist:
                 mu_list.append(torch.exp(theta[0] + theta[1] / 2))
                 sigma2_list.append((torch.exp(theta[1]) - 1) * torch.exp(2 * theta[0] + theta[1]))
             else:
-                raise NotImplementedError
+                raise NotImplementedError()
         return torch.cat(mu_list, dim=-1), torch.cat(sigma2_list, dim=-1)
     
     # for vsbc testing
@@ -382,3 +396,15 @@ class VariationalDist:
                                             strict=True):
             vsbc_list.append(1 - est_dist.cdf(sub_true_theta))
         return torch.cat(vsbc_list, dim=-1)  # (b, k)
+    
+    # for testing
+    def draw_samples(self, raw_pred: torch.Tensor, sample_n: int):
+        assert raw_pred.ndim == 3
+        assert raw_pred.shape[-1] == 2
+        assert raw_pred.shape[-2] == sum(self.latent_size)
+
+        est_dist_list = self.return_unrearranged_dist(raw_pred)
+        samples_list = []
+        for est_dist in est_dist_list:
+            samples_list.append(est_dist.sample((sample_n,)))
+        return torch.cat(samples_list, dim=-1).permute([1, 2, 0])  # (b, k, n_samples)

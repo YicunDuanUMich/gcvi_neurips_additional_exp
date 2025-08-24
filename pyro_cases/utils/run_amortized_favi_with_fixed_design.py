@@ -115,7 +115,8 @@ def train_and_test_amortized_favi_with_fixed_design(task_name,
                                                                              example_sample_dict=test_sample_dict)
     test_x = vae.extract_x_as_set(batch_size=num_test_obs, sample_dict=expanded_test_sample_dict)
     test_theta = vae.extract_theta(expanded_test_sample_dict)
-
+    
+    pyro.set_rng_seed(seed)
     torch.manual_seed(seed)
     random.seed(seed)
     np.random.seed(seed)

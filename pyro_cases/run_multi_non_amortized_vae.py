@@ -9,11 +9,11 @@ from pathlib import Path
 from termcolor import colored
 
 from pyro_cases.utils.vae_dict import vae_dict
-from pyro_cases.utils.run_non_amoretized_vae import train_and_test_non_amortized_vae
+from pyro_cases.utils.run_non_amoretized_vae_with_fixed_design import train_and_test_non_amortized_vae_with_fixed_design
 
 
 def my_worker(kwargs):
-    return train_and_test_non_amortized_vae(**kwargs)
+    return train_and_test_non_amortized_vae_with_fixed_design(**kwargs)
 
 def process_task(tags, task_params_nested_list, least_tasks_per_chunk):
     results = []
@@ -45,21 +45,25 @@ def process_task(tags, task_params_nested_list, least_tasks_per_chunk):
 @click.command()
 @click.option("--save-path", type=str, help="path to output file")
 @click.option("--repeat-times", type=int)
-@click.option("--max-processes-per-gpu", type=int, default=4)
-def main(save_path, repeat_times, max_processes_per_gpu):
+@click.option("--use-cpu", is_flag=True)
+@click.option("--max-processes-per-device", type=int, default=4)
+def main(save_path, repeat_times, use_cpu, max_processes_per_device):
     task_names = list(vae_dict.keys())
     save_path = Path(save_path)
     
-    cuda_devices = [f"cuda:{i}" for i in range(torch.cuda.device_count())]
-    assert repeat_times % len(cuda_devices) == 0
-    least_tasks_per_chunk = len(cuda_devices) * max_processes_per_gpu
+    if not use_cpu:
+        my_devices = [f"cuda:{i}" for i in range(torch.cuda.device_count())]
+    else:
+        my_devices = ["cpu"] * 4
+    assert repeat_times % len(my_devices) == 0
+    least_tasks_per_chunk = len(my_devices) * max_processes_per_device
 
     print_green = lambda x: print(colored(x, "green"))
     print_green("+" * 100)
     print_green("Config:")
     print_green(f"\t tasks_names: {task_names}")
     print_green(f"\t save_path: {save_path}")
-    print_green(f"\t cuda_devices: {cuda_devices}")
+    print_green(f"\t devices: {my_devices}")
     print_green(f"\t tags:")
     task_tags = [(f"t_{tn}", tn) for tn in task_names]
     for i, (t, _) in enumerate(task_tags):
@@ -70,7 +74,7 @@ def main(save_path, repeat_times, max_processes_per_gpu):
     for t, tn in task_tags:
         assert tn in vae_dict
         for ri in range(repeat_times):
-            device = torch.device(cuda_devices[ri % len(cuda_devices)])
+            device = torch.device(my_devices[ri % len(my_devices)])
             tasks[t].append(
                 {
                     "task_name": tn,
@@ -86,6 +90,7 @@ def main(save_path, repeat_times, max_processes_per_gpu):
                     "silent": True,
                     "return_vae": False,
                     "suppress_error": True,
+                    "use_natural_gradient": True,
                 }
             )
     
