@@ -91,6 +91,7 @@ def main(save_path, repeat_times, use_cpu, max_processes_per_device):
                     "return_vae": False,
                     "suppress_error": True,
                     "use_natural_gradient": True,
+                    "record_raw_theta_trace": False,
                 }
             )
     

@@ -65,7 +65,8 @@ def train_and_test_non_amortized_vae_with_fixed_design(task_name,
                                                         silent=False,
                                                         return_vae=False,
                                                         suppress_error=True,
-                                                        use_natural_gradient=False):
+                                                        use_natural_gradient=False,
+                                                        record_raw_theta_trace=False):
     pyro.clear_param_store()
 
     if task_name in vae_dict:
@@ -142,9 +143,10 @@ def train_and_test_non_amortized_vae_with_fixed_design(task_name,
             elbo_scheduler.step()
             step_loss = step_loss.item()
         elbo_training_loss.append(step_loss)
-        cur_params = pyro.get_param_store()
-        param_raw_theta1_trace.append(cur_params["my_param_raw_theta1"].detach().cpu())
-        param_raw_theta2_trace.append(cur_params["my_param_raw_theta2"].detach().cpu())
+        if record_raw_theta_trace:
+            cur_params = pyro.get_param_store()
+            param_raw_theta1_trace.append(cur_params["my_param_raw_theta1"].detach().cpu())
+            param_raw_theta2_trace.append(cur_params["my_param_raw_theta2"].detach().cpu())
 
     for _ in iterations:    
         if suppress_error:
